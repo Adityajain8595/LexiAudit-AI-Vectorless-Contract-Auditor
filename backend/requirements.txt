@@ -6,7 +6,7 @@ supabase
 gotrue
 python-multipart
 pageindex
-google-genai
+langchain-groq
 groq
 httpx
 langfuse
