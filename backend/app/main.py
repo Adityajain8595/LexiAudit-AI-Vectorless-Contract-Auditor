@@ -7,7 +7,7 @@ from app.services.redis_cache import _cache_service
 app = FastAPI(
     title="LexiAudit AI — Intelligent Legal Contract Auditor",
     version="1.0.0",
-    description="Enterprise Vectorless RAG engine with Presidio PII sanitization, Llama-Guard guardrails, and Langfuse telemetry."
+    description="Enterprise Vectorless RAG engine with Presidio PII sanitization, guardrails, and Langfuse telemetry."
 )
 
 LexiAuditExceptionHandler.register_app_handlers(app)
