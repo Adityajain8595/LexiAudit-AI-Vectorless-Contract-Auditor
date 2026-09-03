@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="peachGrad" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FB923C"/>
+      <stop offset="50%" stop-color="#F27A52"/>
+      <stop offset="100%" stop-color="#C2410C"/>
+    </linearGradient>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1A120D"/>
+      <stop offset="100%" stop-color="#0C0806"/>
+    </linearGradient>
+  </defs>
+  <!-- Background squircle -->
+  <rect width="48" height="48" rx="12" fill="url(#bgGrad)"/>
+  <rect width="48" height="48" rx="12" stroke="url(#peachGrad)" stroke-width="1.5" stroke-opacity="0.4"/>
+  
+  <!-- Scales of Justice -->
+  <!-- Central pillar & top beam -->
+  <path d="M24 10V38M24 38H18M24 38H30" stroke="url(#peachGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M12 16H36" stroke="url(#peachGrad)" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="24" cy="11" r="2" fill="url(#peachGrad)"/>
+
+  <!-- Left Scale Pan & Strings -->
+  <path d="M12 16L7 26H17L12 16Z" stroke="url(#peachGrad)" stroke-width="1.8" stroke-linejoin="round"/>
+  <path d="M7 26C7 28.5 9.24 30.5 12 30.5C14.76 30.5 17 28.5 17 26" fill="url(#peachGrad)" fill-opacity="0.3" stroke="url(#peachGrad)" stroke-width="1.8"/>
+
+  <!-- Right Scale Pan & Strings -->
+  <path d="M36 16L31 26H41L36 16Z" stroke="url(#peachGrad)" stroke-width="1.8" stroke-linejoin="round"/>
+  <path d="M31 26C31 28.5 33.24 30.5 36 30.5C38.76 30.5 41 28.5 41 26" fill="url(#peachGrad)" fill-opacity="0.3" stroke="url(#peachGrad)" stroke-width="1.8"/>
+</svg>
