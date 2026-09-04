@@ -1,8 +1,10 @@
 import axios from 'axios';
 import { supabase } from './supabase';
 
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
 const api = axios.create({
-  baseURL: '',
+  baseURL: BASE_URL,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -57,7 +59,7 @@ api.interceptors.response.use(
 // ─── Health ───────────────────────────────────────────────────────────────────
 export const checkBackendHealth = async (): Promise<boolean> => {
   try {
-    const res = await axios.get('/health', { timeout: 3000 });
+    const res = await axios.get(`${BASE_URL}/health`, { timeout: 3500 });
     return res.status === 200 && res.data?.status === 'healthy';
   } catch {
     return false;

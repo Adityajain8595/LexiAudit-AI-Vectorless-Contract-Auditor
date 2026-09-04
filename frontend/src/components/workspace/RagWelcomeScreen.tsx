@@ -52,10 +52,16 @@ export default function RagWelcomeScreen() {
     onDrop,
     accept: { 'application/pdf': ['.pdf'] },
     maxFiles: 1,
-    noClick: false
+    disabled: !isBackendOnline,
+    noClick: !isBackendOnline
   });
 
   const handleDirectUpload = async (file: File) => {
+    if (!isBackendOnline) {
+      setErrorMessage('Backend engine is currently connecting/spinning up. Please wait a moment for connection.');
+      return;
+    }
+
     setSelectedFile(file);
     setUploadStatus('processing');
     setStageIndex(0);
