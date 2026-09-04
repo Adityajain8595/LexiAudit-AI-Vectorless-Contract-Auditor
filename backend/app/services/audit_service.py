@@ -74,16 +74,9 @@ class ContractAuditor:
                 pydantic_cls=AutomaticAuditOutput,
                 model=settings.PRIMARY_GROQ_MODEL,
                 temperature=0.0,
-                max_tokens=4000
+                max_tokens=8000
             )
             out = validated.model_dump()
-
-            if not out.get("risk_analysis") and not out.get("missing_clauses"):
-                fb = LexiAuditExceptionHandler.get_audit_fallback()
-                out["risk_analysis"] = fb["risk_analysis"]
-                out["missing_clauses"] = fb["missing_clauses"]
-                if not out.get("suggested_queries"):
-                    out["suggested_queries"] = fb["suggested_queries"]
 
             risk_map = {"RED": "HIGH", "YELLOW": "MEDIUM", "GREEN": "LOW", "HIGH": "HIGH", "MEDIUM": "MEDIUM", "LOW": "LOW"}
 
@@ -130,7 +123,7 @@ class ContractAuditor:
 
         except Exception as e:
             span.end(output={"error": str(e)})
-            return LexiAuditExceptionHandler.get_audit_fallback()
+            return {"risk_analysis": [], "missing_clauses": [], "suggested_queries": []}
 
 _auditor_instance = ContractAuditor()
 

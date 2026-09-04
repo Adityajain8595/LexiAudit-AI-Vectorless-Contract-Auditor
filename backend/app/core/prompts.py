@@ -23,39 +23,24 @@ Perform a comprehensive enterprise legal compliance audit on this contract. Outp
 DOCUMENT TREE:
 {document_tree}
 
-Extract risk_analysis, missing_clauses, and suggested_queries strictly following this JSON schema:
-```json
-{{
-  "risk_analysis": [
-    {{
-      "clause_name": "Descriptive Legal Risk Title (e.g., Uncapped Liability for Restriction Breach, Unilateral Price Escalation)",
-      "risk_level": "HIGH",
-      "section_title": "Specific sub-clause reference (e.g., Section 7.2: Warranty Disclaimer)",
-      "page_number": 1,
-      "extracted_text": "Complete verbatim paragraph excerpt of the exact sub-clause from the document text",
-      "analysis": "In-depth 2-to-3 sentence legal risk assessment detailing statutory exposure, operational risk, and contractual imbalance.",
-      "remedy_recommendation": "Specific strategic redline or counter-language proposal to negotiate safer terms."
-    }}
-  ],
-  "missing_clauses": [
-    {{
-      "clause_name": "Specific Missing Safeguard Title (e.g. Data Protection Addendum (DPA), Mutual Cyber Incident Liability Protection)",
-      "severity": "HIGH",
-      "impact_description": "Detailed multi-sentence explanation of statutory, operational, or financial exposure caused by omitting this protection.",
-      "suggested_language": "Complete multi-line standard enterprise boilerplate clause to insert into the agreement."
-    }}
-  ],
-  "suggested_queries": [
-    "Contextual follow-up question 1 about specific monetary limits or liabilities in this contract",
-    "Contextual follow-up question 2 about termination, cure periods, or data retention rules",
-    "Contextual follow-up question 3 about indemnification, carve-outs, or governing law"
-  ]
-}}
-```
-Requirements:
-1. Identify ALL high-risk, medium-risk, and unilateral terms (e.g. price increases, uncapped liabilities, data use for AI model training, short cure periods, arbitration/jury waivers).
-2. For missing_clauses, identify critical missing enterprise safeguards (e.g., cyberattack liability coverage, mutual SLA credit automatic issuance, data export rights upon termination).
-3. Ensure the JSON output contains all three keys: risk_analysis, missing_clauses, and suggested_queries.
+Extract strictly the Top 3 to 5 highest-risk clauses and critical missing safeguards.
+
+Every risk_analysis item MUST include non-empty values for:
+1. "clause_name": Descriptive title
+2. "risk_level": "HIGH", "MEDIUM", or "LOW"
+3. "section_title": Section name and number
+4. "page_number": Integer page number
+5. "extracted_text": Verbatim sentence from document
+6. "analysis": Multi-sentence assessment explaining financial, operational, and legal liability. NEVER write brief generic phrases like "Potential legal exposure".
+7. "remedy_recommendation": Concrete redline or counter-language recommendation to balance the terms.
+
+Every missing_clauses item MUST include:
+1. "clause_name": Name of standard omitted clause (e.g., Data Protection Addendum / DPA)
+2. "severity": "HIGH", "MEDIUM", or "LOW"
+3. "impact_description": Multi-sentence explanation of legal risk caused by its absence.
+4. "suggested_language": Complete standard boilerplate legal clause (3+ lines) to insert.
+
+Ensure "suggested_queries" contains exactly 3 context-specific legal questions.
 """,
         "query_rewrite_prompt": """
 Given the following conversation history between a legal auditor and user, rewrite the latest follow-up question into a standalone, specific search query that incorporates necessary context from the conversation.

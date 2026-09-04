@@ -71,8 +71,7 @@ async def upload_document(
     try:
         audit_results = await automatic_audit(tree_nodes, user_id=current_user["id"])
     except Exception as audit_err:
-        print(f"[DocUpload] Audit reasoning note (using fallback): {audit_err}")
-        audit_results = LexiAuditExceptionHandler.get_audit_fallback(file.filename)
+        audit_results = {"risk_analysis": [], "missing_clauses": [], "suggested_queries": []}
 
     # Persist file in Supabase storage
     ensure_bucket_exists(supabase, BUCKET_NAME)

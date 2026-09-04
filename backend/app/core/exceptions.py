@@ -166,32 +166,11 @@ class LexiAuditExceptionHandler:
 
     @classmethod
     def get_audit_fallback(cls, filename: str = "Contract") -> Dict[str, Any]:
-        """Provides baseline audit findings when automated audit LLM reasoning is disrupted."""
+        """Provides empty audit structure when automated audit reasoning fails or is disabled."""
         return {
-            "risk_analysis": [
-                {
-                    "clause_name": "Review Required",
-                    "risk_level": "MEDIUM",
-                    "section_title": "General Terms",
-                    "page_number": 1,
-                    "extracted_text": f"Document: {filename}",
-                    "analysis": "Automated audit baseline applied. Interactive clause-level Q&A is available.",
-                    "remedy_recommendation": "Review key liability, termination, and data security clauses directly in chat."
-                }
-            ],
-            "missing_clauses": [
-                {
-                    "clause_name": "Data Protection & Privacy (DPA)",
-                    "severity": "MEDIUM",
-                    "impact_description": "Verify whether standard GDPR / CCPA data processing terms are explicitly defined.",
-                    "suggested_language": "Each party shall comply with applicable Data Protection Legislation in respect of personal data processed."
-                }
-            ],
-            "suggested_queries": [
-                "What are the primary termination conditions and notice periods?",
-                "What is the total liability limitation or indemnification scope?",
-                "Are there unilateral or non-mutual covenant provisions?"
-            ]
+            "risk_analysis": [],
+            "missing_clauses": [],
+            "suggested_queries": []
         }
 
     @classmethod

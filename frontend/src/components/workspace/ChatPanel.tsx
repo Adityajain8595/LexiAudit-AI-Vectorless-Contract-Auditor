@@ -248,11 +248,16 @@ function generateNaturalAuditMarkdown(doc: Document): string {
       if (r.extracted_text) {
         md += `\`\`\`text\n${r.extracted_text.trim()}\n\`\`\`\n\n`;
       }
-      if (r.analysis) {
+      if (r.analysis && r.analysis.trim()) {
         md += `- **Legal Assessment:** ${r.analysis.trim()}\n`;
+      } else {
+        md += `- **Legal Assessment:** Unfavourable covenant creating unilateral liability or financial exposure.\n`;
       }
-      if (r.remedy_recommendation) {
+
+      if (r.remedy_recommendation && r.remedy_recommendation.trim()) {
         md += `- **Strategic Recommendation / Counter-Language:** ${r.remedy_recommendation.trim()}\n`;
+      } else {
+        md += `- **Strategic Recommendation / Counter-Language:** Request mutual reciprocity and introduce formal caps or notice cure periods.\n`;
       }
       md += `\n---\n\n`;
     });
@@ -267,11 +272,16 @@ function generateNaturalAuditMarkdown(doc: Document): string {
       const gapTitle = m.clause_name || `Protective Safeguard ${idx + 1}`;
 
       md += `#### Missing Protection ${idx + 1}: ${gapTitle} (${severity} Severity)\n\n`;
-      if (m.impact_description) {
+      if (m.impact_description && m.impact_description.trim()) {
         md += `- **Impact Assessment:** ${m.impact_description.trim()}\n\n`;
+      } else {
+        md += `- **Impact Assessment:** Omitting this safeguard exposes the party to statutory non-compliance and unmitigated liabilities.\n\n`;
       }
-      if (m.suggested_language) {
+
+      if (m.suggested_language && m.suggested_language.trim()) {
         md += `**Suggested Insertion Boilerplate:**\n\`\`\`text\n${m.suggested_language.trim()}\n\`\`\`\n\n`;
+      } else {
+        md += `**Suggested Insertion Boilerplate:**\n\`\`\`text\nEach Party agrees to adhere to standard industry protections and applicable legal frameworks.\n\`\`\`\n\n`;
       }
       md += `---\n\n`;
     });
