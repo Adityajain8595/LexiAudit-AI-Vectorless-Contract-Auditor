@@ -10,7 +10,9 @@ import { supabase } from './api/supabase';
 // Protected route: Redirects unauthenticated users to Landing page
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  return isAuthenticated() ? <>{children}</> : <Navigate to="/" replace />;
+  const token = useAuthStore((s) => s.token);
+  const hasAuth = isAuthenticated() || !!token || !!sessionStorage.getItem('lexiaudit_token');
+  return hasAuth ? <>{children}</> : <Navigate to="/" replace />;
 }
 
 export default function App() {

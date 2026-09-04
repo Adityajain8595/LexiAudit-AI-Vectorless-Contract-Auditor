@@ -51,6 +51,7 @@ export default function AuthCallback() {
         // Helper to complete sign-in and redirect
         const completeSignIn = (user: any, token: string) => {
           if (!mounted) return;
+          sessionStorage.setItem('lexiaudit_token', token);
           setAuth(
             {
               id: user.id,
@@ -59,7 +60,11 @@ export default function AuthCallback() {
             },
             token
           );
-          navigate('/workspace', { replace: true });
+          setTimeout(() => {
+            if (mounted) {
+              navigate('/workspace', { replace: true });
+            }
+          }, 100);
         };
 
         // 2. Check if Supabase already has a valid session
