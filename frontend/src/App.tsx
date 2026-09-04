@@ -7,9 +7,10 @@ import Workspace from './pages/Workspace';
 import useAuthStore from './store/authStore';
 import { supabase } from './api/supabase';
 
+// Protected route: Redirects unauthenticated users to Landing page
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  return isAuthenticated() ? <>{children}</> : <Navigate to="/auth" replace />;
+  return isAuthenticated() ? <>{children}</> : <Navigate to="/" replace />;
 }
 
 export default function App() {
@@ -18,14 +19,12 @@ export default function App() {
 
   // Sync auth events during this active session
   useEffect(() => {
-    // Clean up any legacy localStorage remnants from older versions
     try {
       localStorage.removeItem('lexiaudit_token');
       localStorage.removeItem('lexiaudit-auth');
     } catch (_) {}
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // Only set auth if there is an active session and token in this browser session
       if (session && session.user && session.access_token && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
         setAuth(
           {
