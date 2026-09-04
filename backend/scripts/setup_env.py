@@ -20,7 +20,7 @@ async def run_diagnostics():
         print(f"   [FAIL] Groq Error: {e}", flush=True)
 
     # Verify PII detection and sanitization
-    print("\n[Subsystem] Presidio PII Redaction...", flush=True)
+    print("\n[Subsystem] Deterministic PII Sanitizer...", flush=True)
     sample_pii = "Contact John Doe at john.doe@lexisample.com or +1 (555) 234-5678, IBAN: GB29NWBK60161331926819."
     sanitized, meta = redact_pii(sample_pii)
     print(f"   Input:     {sample_pii}", flush=True)

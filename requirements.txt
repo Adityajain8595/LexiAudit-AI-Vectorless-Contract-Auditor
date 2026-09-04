@@ -10,8 +10,6 @@ google-genai
 groq
 httpx
 langfuse
-presidio-analyzer
-presidio-anonymizer
 reportlab
 aiofiles
 python-dotenv

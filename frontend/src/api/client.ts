@@ -56,9 +56,9 @@ api.interceptors.response.use(
 
     originalRequest._retryCount = originalRequest._retryCount || 0;
 
-    if (isTransientError && originalRequest._retryCount < 2 && originalRequest.method !== 'get_health') {
+    if (isTransientError && originalRequest._retryCount < 3 && originalRequest.url !== '/health') {
       originalRequest._retryCount += 1;
-      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
       return api(originalRequest);
     }
 

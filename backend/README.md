@@ -1,6 +1,6 @@
 # LexiAudit AI — Backend Engine
 
-FastAPI backend engine for **LexiAudit AI**, providing Vectorless RAG via PageIndex, Groq LLMs (openai/gpt-oss-120b & openai/gpt-oss-20b), Presidio PII sanitization, Groq/Llama-Guard security guardrails, and Langfuse LLMOps telemetry.
+FastAPI backend engine for **LexiAudit AI**, providing Vectorless RAG via PageIndex, Groq LLMs (openai/gpt-oss-120b & openai/gpt-oss-20b), deterministic PII sanitization, Groq/Llama-Guard security guardrails, and Langfuse LLMOps telemetry.
 
 ---
 

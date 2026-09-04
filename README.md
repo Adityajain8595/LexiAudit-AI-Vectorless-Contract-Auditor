@@ -1,6 +1,6 @@
 # LexiAudit AI — Vectorless Legal Contract Auditor
 
-LexiAudit AI is an enterprise legal contract auditing platform. It features vectorless tree-based RAG via PageIndex, Groq-powered high-speed LLM inference (`openai/gpt-oss-120b` and `openai/gpt-oss-20b`), Presidio PII redaction, Llama-Guard security guardrails, AES-256-GCM encrypted Redis caching, and Langfuse LLMOps telemetry.
+LexiAudit AI is an enterprise legal contract auditing platform. It features vectorless tree-based RAG via PageIndex, Groq-powered high-speed LLM inference (`openai/gpt-oss-120b` and `openai/gpt-oss-20b`), deterministic PII sanitization, Llama-Guard security guardrails, AES-256-GCM encrypted Redis caching, and Langfuse LLMOps telemetry.
 
 ---
 
@@ -9,7 +9,7 @@ LexiAudit AI is an enterprise legal contract auditing platform. It features vect
 - **Vectorless Hierarchical RAG**: Navigates hierarchical contract section trees generated via PageIndex without vector embedding loss or chunk boundary issues.
 - **Autonomous Legal Audit**: Automatically scans uploaded contract PDFs for indemnification caps, liability exposure, termination clauses, missing protective boilerplate, and risks.
 - **Langfuse Telemetry & Evaluation**: Full LLMOps tracing with root trace user and session tracking, separated context precision & context recall evaluation, faithfulness hallucination detection, and answer relevancy scoring.
-- **Security & Guardrails**: Microsoft Presidio PII redaction (masking SSNs, emails, phone numbers, API keys) and Groq Llama-Guard safety checks.
+- **Security & Guardrails**: Deterministic Regex PII Sanitizer (masking SSNs, credit cards, emails, phone numbers, API keys) and Groq Llama-Guard safety checks.
 - **Encrypted Redis Tree Caching**: Upstash Redis caching protected by AES-256-GCM encryption for ultra-fast section retrieval.
 - **PDF Report Generation**: Instant export of legal audit summaries and chat session transcripts into formatted PDF reports.
 
