@@ -99,12 +99,21 @@ class TelemetryManager:
         if not client:
             return NullTrace(name)
         try:
+            meta = {
+                **(metadata or {}),
+                "tags": tags or ["production", "legal-contract-auditor"]
+            }
+            if session_id:
+                meta["session_id"] = session_id
+            if user_id:
+                meta["user_id"] = user_id
+
             if hasattr(client, "trace"):
                 trace_obj = client.trace(
                     name=name,
                     session_id=session_id,
                     user_id=user_id,
-                    metadata=metadata or {},
+                    metadata=meta,
                     tags=tags or ["production", "legal-contract-auditor"]
                 )
                 return SpanWrapper(trace_obj, name)
@@ -112,12 +121,7 @@ class TelemetryManager:
                 obs = client.start_observation(
                     name=name,
                     as_type="span",
-                    session_id=session_id,
-                    user_id=user_id,
-                    metadata={
-                        **(metadata or {}),
-                        "tags": tags or ["production", "legal-contract-auditor"]
-                    }
+                    metadata=meta
                 )
                 return SpanWrapper(obs, name)
         except Exception as e:

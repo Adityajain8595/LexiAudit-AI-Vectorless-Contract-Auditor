@@ -231,16 +231,20 @@ function MarkdownCodeBlock({ node, inline, className, children, ...props }: any)
 function generateNaturalAuditMarkdown(doc: Document): string {
   let md = '';
 
+  const riskMap: Record<string, string> = { RED: 'HIGH', YELLOW: 'MEDIUM', GREEN: 'LOW', HIGH: 'HIGH', MEDIUM: 'MEDIUM', LOW: 'LOW' };
+
   const risks = doc.risk_analysis || [];
   if (risks.length > 0) {
     md += `### Identified Key Risks & Unfavourable Clauses\n\n`;
     risks.forEach((r, idx) => {
-      const riskLevel = r.risk_level || 'MEDIUM';
+      const rawLevel = String(r.risk_level || 'MEDIUM').toUpperCase();
+      const riskLevel = riskMap[rawLevel] || 'MEDIUM';
       const pageStr = r.page_number ? `, Page ${r.page_number}` : '';
-      const sectionTitle = r.section_title || r.clause_name || `Section ${idx + 1}`;
+      const clauseTitle = (!r.clause_name || r.clause_name === 'Clause') ? (r.section_title || `Risk Provision ${idx + 1}`) : r.clause_name;
+      const sectionTitle = r.section_title || clauseTitle;
       const citationRef = `[${sectionTitle}${pageStr}]`;
 
-      md += `#### ${idx + 1}. ${r.clause_name || sectionTitle} (${riskLevel} RISK) ${citationRef}\n\n`;
+      md += `#### ${idx + 1}. ${clauseTitle} (${riskLevel} RISK) ${citationRef}\n\n`;
       if (r.extracted_text) {
         md += `\`\`\`text\n${r.extracted_text.trim()}\n\`\`\`\n\n`;
       }
@@ -256,8 +260,11 @@ function generateNaturalAuditMarkdown(doc: Document): string {
   if (missing.length > 0) {
     md += `### Missing Essential Protections & Gaps\n\n`;
     missing.forEach((m, idx) => {
+      const rawSev = String(m.severity || 'MEDIUM').toUpperCase();
+      const severity = riskMap[rawSev] || 'MEDIUM';
+      const gapTitle = (!m.clause_name || m.clause_name === 'Clause') ? `Protective Safeguard ${idx + 1}` : m.clause_name;
       const impact = m.impact_description ? `\n\n- **Impact Assessment:** ${m.impact_description.trim()}\n` : '\n';
-      md += `#### Missing Protection ${idx + 1}: ${m.clause_name} (${m.severity || 'MEDIUM'} Severity)${impact}\n`;
+      md += `#### Missing Protection ${idx + 1}: ${gapTitle} (${severity} Severity)${impact}\n`;
       if (m.suggested_language) {
         md += `**Suggested Insertion Boilerplate:**\n\`\`\`text\n${m.suggested_language.trim()}\n\`\`\`\n\n`;
       }

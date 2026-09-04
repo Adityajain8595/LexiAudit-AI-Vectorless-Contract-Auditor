@@ -86,7 +86,15 @@ class ContractAuditor:
                 if not out.get("suggested_queries"):
                     out["suggested_queries"] = fb["suggested_queries"]
 
+            risk_map = {"RED": "HIGH", "YELLOW": "MEDIUM", "GREEN": "LOW", "HIGH": "HIGH", "MEDIUM": "MEDIUM", "LOW": "LOW"}
+
             for item in out.get("risk_analysis", []):
+                raw_level = str(item.get("risk_level", "MEDIUM")).strip().upper()
+                item["risk_level"] = risk_map.get(raw_level, "MEDIUM")
+
+                if not item.get("clause_name") or item.get("clause_name") == "Clause":
+                    item["clause_name"] = item.get("section_title") or "Contract Provision"
+
                 item_sec = str(item.get("section_title", "")).strip().lower()
                 item_clause = str(item.get("clause_name", "")).strip().lower()
                 item_text = str(item.get("extracted_text", "")).strip()
@@ -125,6 +133,12 @@ class ContractAuditor:
                         item["node_id"] = matched_node["node_id"]
                     if not item.get("extracted_text") or len(item["extracted_text"]) < 5:
                         item["extracted_text"] = matched_node.get("text") or matched_node.get("summary") or ""
+
+            for missing in out.get("missing_clauses", []):
+                raw_sev = str(missing.get("severity", "MEDIUM")).strip().upper()
+                missing["severity"] = risk_map.get(raw_sev, "MEDIUM")
+                if not missing.get("clause_name") or missing.get("clause_name") == "Clause":
+                    missing["clause_name"] = "Protective Safeguard Provision"
 
             if len(out.get("suggested_queries", [])) > 3:
                 out["suggested_queries"] = out["suggested_queries"][:3]
