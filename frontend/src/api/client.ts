@@ -85,7 +85,7 @@ export const uploadDocument = (
     },
   });
 
-export const listDocuments = () => api.get('/api/documents/');
+export const listDocuments = () => api.get('/api/documents');
 
 export const getDocument = (docId: string) => api.get(`/api/documents/${docId}`);
 

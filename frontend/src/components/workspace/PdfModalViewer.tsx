@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, FileText, Loader2, ExternalLink, Download, ChevronLeft, ChevronRight,
@@ -19,6 +19,283 @@ interface HighlightBox {
   text: string;
 }
 
+interface PdfPageItemProps {
+  pdfDoc: pdfjsLib.PDFDocumentProxy;
+  pageNum: number;
+  scale: number;
+  pdfCitation: any;
+  citationPage: number;
+  onVisible: (pageNum: number) => void;
+}
+
+function PdfPageItem({
+  pdfDoc,
+  pageNum,
+  scale,
+  pdfCitation,
+  citationPage,
+  onVisible,
+}: PdfPageItemProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [highlights, setHighlights] = useState<HighlightBox[]>([]);
+  const renderTaskRef = useRef<any>(null);
+
+  // IntersectionObserver to update active page counter as user scrolls down
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.3) {
+            onVisible(pageNum);
+          }
+        });
+      },
+      { threshold: [0.3, 0.6] }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [pageNum, onVisible]);
+
+  // Render individual page canvas and text selection highlight overlay
+  useEffect(() => {
+    let cancelled = false;
+
+    async function render() {
+      if (!canvasRef.current) return;
+      try {
+        if (renderTaskRef.current) renderTaskRef.current.cancel();
+
+        const page = await pdfDoc.getPage(pageNum);
+        if (cancelled || !canvasRef.current) return;
+
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const viewport = page.getViewport({ scale });
+        const pixelRatio = window.devicePixelRatio || 1;
+
+        canvas.width = Math.floor(viewport.width * pixelRatio);
+        canvas.height = Math.floor(viewport.height * pixelRatio);
+        canvas.style.width = `${Math.floor(viewport.width)}px`;
+        canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+        ctx.scale(pixelRatio, pixelRatio);
+
+        renderTaskRef.current = page.render({
+          canvasContext: ctx,
+          viewport,
+          canvas,
+        } as any);
+
+        await renderTaskRef.current.promise;
+        if (cancelled) return;
+
+        // Calculate highlights if pageNum matches target citation page
+        const exactText = (pdfCitation?.exact_text || '').trim();
+        const citationTitle = (pdfCitation?.title || '').trim();
+        const isRealCitation = Boolean(
+          pdfCitation &&
+          pdfCitation.node_id !== 'view' &&
+          (exactText.length >= 3 || citationTitle.length >= 3)
+        );
+
+        if (isRealCitation && pageNum === citationPage) {
+          const textContent = await page.getTextContent();
+          if (cancelled) return;
+
+          const boxes: HighlightBox[] = [];
+          const validItems = textContent.items.filter((item: any) => 'str' in item && item.str && item.str.trim().length > 0);
+          const matchingIndices = new Set<number>();
+
+          const schedMatch = citationTitle.match(/\bSchedule\s+([A-Za-z0-9]+)\b/i) ||
+                             exactText.match(/^\s*#*\s*SCHEDULE\s+([A-Za-z0-9]+)\b/i);
+          const scheduleLetter = schedMatch ? schedMatch[1].toUpperCase() : '';
+
+          let subSectionId = '';
+          if (!scheduleLetter) {
+            const titleSubSecMatch = citationTitle.match(/(?:Section|Sec\.?|Clause)?\s*\b(\d+\.\d+)\b/i) ||
+                                     exactText.match(/(?:Section|Sec\.?|Clause)?\s*\b(\d+\.\d+)\b/i);
+            if (titleSubSecMatch) {
+              subSectionId = titleSubSecMatch[1].trim();
+            }
+          }
+
+          const majorSecMatch = !scheduleLetter && !subSectionId ? (
+            citationTitle.match(/\b(?:Section|Sec\.?)\s*(\d+)\b/i) ||
+            exactText.match(/^\s*(?:Section|Sec\.?)\s*(\d+)\b/i)
+          ) : null;
+          const majorSecId = majorSecMatch ? majorSecMatch[1].trim() : '';
+
+          if (exactText && exactText.length >= 8) {
+            const targetWords = exactText.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w: string) => w.length >= 3);
+            if (targetWords.length >= 3) {
+              let bestScore = 0;
+              let bestIdx = -1;
+
+              validItems.forEach((item: any, i: number) => {
+                const itemWords = (item.str || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w: string) => w.length >= 3);
+                if (itemWords.length < 3) return;
+
+                let matchCount = 0;
+                itemWords.forEach((w: string) => {
+                  if (targetWords.includes(w)) matchCount++;
+                });
+
+                const score = matchCount / itemWords.length;
+                if (matchCount >= 4 && score >= 0.4) {
+                  matchingIndices.add(i);
+                } else if (score > bestScore && matchCount >= 3) {
+                  bestScore = score;
+                  bestIdx = i;
+                }
+              });
+
+              if (matchingIndices.size === 0 && bestIdx !== -1 && bestScore >= 0.35) {
+                matchingIndices.add(bestIdx);
+              }
+
+              if (matchingIndices.size === 0) {
+                for (let i = 0; i < validItems.length; i++) {
+                  let windowStr = '';
+                  for (let j = i; j < Math.min(validItems.length, i + 4); j++) {
+                    windowStr += ' ' + ((validItems[j] as any).str || '');
+                    const normWindow = windowStr.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+                    const normTarget = exactText.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+                    if (normWindow.length >= 25 && (normTarget.includes(normWindow) || normWindow.includes(normTarget))) {
+                      for (let k = i; k <= j; k++) {
+                        matchingIndices.add(k);
+                      }
+                      break;
+                    }
+                  }
+                  if (matchingIndices.size > 0) break;
+                }
+              }
+            }
+          }
+
+          if (matchingIndices.size === 0 && scheduleLetter) {
+            const startPattern = new RegExp(`^\\s*(?:SCHEDULE|EXHIBIT|TABLE)\\s+${scheduleLetter}\\b`, 'i');
+            const boundaryPattern = /^\s*(?:SCHEDULE\s+[A-Z]|EXHIBIT\s+[A-Z]|SIGNATURES\b)/i;
+            let capturing = false;
+            for (let i = 0; i < validItems.length; i++) {
+              const str = (validItems[i] as any).str.trim();
+              if (!capturing) {
+                if (startPattern.test(str)) {
+                  capturing = true;
+                  matchingIndices.add(i);
+                }
+              } else {
+                if (boundaryPattern.test(str) && !str.toUpperCase().includes(`SCHEDULE ${scheduleLetter}`)) break;
+                matchingIndices.add(i);
+              }
+            }
+          }
+
+          if (matchingIndices.size === 0 && subSectionId) {
+            const startPattern = new RegExp(`(^|\\s|Section\\s*)${subSectionId.replace('.', '\\.')}\\b`, 'i');
+            const [secN, secP] = subSectionId.split('.').map(Number);
+            const nextSubSecPattern = isNaN(secP) ? null : new RegExp(`^\\s*${secN}\\.${secP + 1}\\b`, 'i');
+            const nextMajorSecPattern = isNaN(secN) ? null : new RegExp(`^\\s*${secN + 1}\\.\\s+[A-Z]`, 'i');
+            const boundaryPattern = /^\s*(?:SCHEDULE\b|SIGNATURES\b|EXHIBIT\b)/i;
+
+            let capturing = false;
+            for (let i = 0; i < validItems.length; i++) {
+              const str = (validItems[i] as any).str.trim();
+              if (!capturing) {
+                if (startPattern.test(str)) {
+                  capturing = true;
+                  matchingIndices.add(i);
+                }
+              } else {
+                const isNextSub = nextSubSecPattern ? nextSubSecPattern.test(str) : false;
+                const isNextMajor = nextMajorSecPattern ? nextMajorSecPattern.test(str) : false;
+                const isBoundary = boundaryPattern.test(str);
+                if (isNextSub || isNextMajor || isBoundary) break;
+                matchingIndices.add(i);
+              }
+            }
+          }
+
+          if (matchingIndices.size === 0 && majorSecId) {
+            const startPattern = new RegExp(`^\\s*(?:Section\\s*)?${majorSecId}\\.\\s+[A-Z]`, 'i');
+            for (let i = 0; i < validItems.length; i++) {
+              const str = (validItems[i] as any).str.trim();
+              if (startPattern.test(str)) {
+                matchingIndices.add(i);
+                break;
+              }
+            }
+          }
+
+          validItems.forEach((item: any, idx: number) => {
+            if (!matchingIndices.has(idx)) return;
+            const tx = item.transform;
+            const pdfX = tx[4];
+            const pdfY = tx[5];
+            const itemWidth = item.width || 0;
+            const itemHeight = item.height || (tx[0] ? Math.abs(tx[0]) : 12);
+            const [viewX, viewY] = viewport.convertToViewportPoint(pdfX, pdfY);
+            const scaledWidth = itemWidth * scale;
+            const scaledHeight = itemHeight * scale;
+
+            boxes.push({
+              left: viewX,
+              top: viewY - scaledHeight,
+              width: scaledWidth,
+              height: scaledHeight,
+              text: item.str,
+            });
+          });
+
+          setHighlights(boxes);
+        } else {
+          setHighlights([]);
+        }
+      } catch (e) {
+        // ignore cancellation
+      }
+    }
+
+    render();
+    return () => {
+      cancelled = true;
+      if (renderTaskRef.current) renderTaskRef.current.cancel();
+    };
+  }, [pdfDoc, pageNum, scale, pdfCitation, citationPage]);
+
+  return (
+    <div
+      ref={containerRef}
+      id={`pdf-page-${pageNum}`}
+      className="relative shadow-2xl rounded-lg overflow-hidden border border-white/10 bg-white inline-block my-3 shrink-0"
+    >
+      <canvas ref={canvasRef} className="block" />
+      {highlights.map((hl, i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute',
+            left: `${hl.left}px`,
+            top: `${hl.top}px`,
+            width: `${hl.width}px`,
+            height: `${hl.height}px`,
+            backgroundColor: 'rgba(51, 144, 255, 0.32)',
+            mixBlendMode: 'multiply',
+          }}
+          className="rounded-[1px] pointer-events-none"
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: boolean }) {
   const { isPdfOpen, closePdf, pdfCitation, selectedDocId, selectedDoc } = useWorkspaceStore();
   const [loading, setLoading] = useState(true);
@@ -27,33 +304,29 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
   const [currentPage, setCurrentPage] = useState(1);
   const [numPages, setNumPages] = useState(1);
   const [scale, setScale] = useState(isSidePanel ? 1.05 : 1.25);
-  const [highlights, setHighlights] = useState<HighlightBox[]>([]);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const renderTaskRef = useRef<any>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const rawBlobUrlRef = useRef<string | null>(null);
 
   const citationPage = pdfCitation?.page_index ? Number(pdfCitation.page_index) : 1;
   const docId = selectedDocId || selectedDoc?.id || (pdfCitation as any)?.doc_id;
 
-  // 1. Fetch PDF Data when modal opens or document changes
+  // 1. Fetch PDF Data when viewer opens or document changes
   useEffect(() => {
     if (!isPdfOpen || !docId) return;
 
     let isSubscribed = true;
 
-    // If PDF document is already loaded for this docId, simply jump to target citation page
     if (pdfDoc) {
       if (citationPage > 0) {
-        setCurrentPage(citationPage);
+        scrollToPage(citationPage);
       }
       return;
     }
 
     setLoading(true);
     setError('');
-    setCurrentPage(citationPage > 0 ? citationPage : 1);
 
     (async () => {
       try {
@@ -71,6 +344,9 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
         if (!isSubscribed) return;
         setPdfDoc(loadedPdf);
         setNumPages(loadedPdf.numPages);
+        if (citationPage > 0) {
+          setTimeout(() => scrollToPage(citationPage), 200);
+        }
       } catch (e: any) {
         if (isSubscribed) {
           console.error('PDF fetch/parse failed:', e);
@@ -92,261 +368,50 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
     if (pdfCitation?.page_index) {
       const p = Number(pdfCitation.page_index);
       if (p > 0) {
-        setCurrentPage(p);
+        scrollToPage(p);
       }
     }
   }, [pdfCitation]);
 
-  // 3. Render Page on Canvas and Compute Text Highlights
-  const renderPage = useCallback(async () => {
-    if (!pdfDoc || !canvasRef.current) return;
-
-    try {
-      if (renderTaskRef.current) renderTaskRef.current.cancel();
-
-      const page = await pdfDoc.getPage(currentPage);
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      const viewport = page.getViewport({ scale });
-      const pixelRatio = window.devicePixelRatio || 1;
-
-      canvas.width = Math.floor(viewport.width * pixelRatio);
-      canvas.height = Math.floor(viewport.height * pixelRatio);
-      canvas.style.width = `${Math.floor(viewport.width)}px`;
-      canvas.style.height = `${Math.floor(viewport.height)}px`;
-
-      ctx.scale(pixelRatio, pixelRatio);
-
-      renderTaskRef.current = page.render({
-        canvasContext: ctx,
-        viewport,
-        canvas,
-      } as any);
-
-      await renderTaskRef.current.promise;
-
-      const textContent = await page.getTextContent();
-      const boxes: HighlightBox[] = [];
-
-      const exactText = (pdfCitation?.exact_text || '').trim();
-      const citationTitle = (pdfCitation?.title || '').trim();
-      const isRealCitation = Boolean(
-        pdfCitation &&
-        pdfCitation.node_id !== 'view' &&
-        (exactText.length >= 3 || citationTitle.length >= 3)
-      );
-
-      if (
-        isRealCitation &&
-        currentPage === citationPage
-      ) {
-        const validItems = textContent.items.filter((item: any) => 'str' in item && item.str && item.str.trim().length > 0);
-        const matchingIndices = new Set<number>();
-
-        // 1. Detect Schedule letter (e.g. "Schedule B", "Schedule A") from citation title
-        const schedMatch = citationTitle.match(/\bSchedule\s+([A-Za-z0-9]+)\b/i) ||
-                           exactText.match(/^\s*#*\s*SCHEDULE\s+([A-Za-z0-9]+)\b/i);
-        const scheduleLetter = schedMatch ? schedMatch[1].toUpperCase() : '';
-
-        // 2. Detect explicit subsection number (e.g. "9.1", "10.2", "8.3") from citation title or exact text
-        let subSectionId = '';
-        if (!scheduleLetter) {
-          const titleSubSecMatch = citationTitle.match(/(?:Section|Sec\.?|Clause)?\s*\b(\d+\.\d+)\b/i) ||
-                                   exactText.match(/(?:Section|Sec\.?|Clause)?\s*\b(\d+\.\d+)\b/i);
-          if (titleSubSecMatch) {
-            subSectionId = titleSubSecMatch[1].trim();
-          }
-        }
-
-        // 3. Detect major section number (e.g. "Section 9", "Section 10") from citation title or exact text
-        const majorSecMatch = !scheduleLetter && !subSectionId ? (
-          citationTitle.match(/\b(?:Section|Sec\.?)\s*(\d+)\b/i) ||
-          exactText.match(/^\s*(?:Section|Sec\.?)\s*(\d+)\b/i)
-        ) : null;
-        const majorSecId = majorSecMatch ? majorSecMatch[1].trim() : '';
-
-        // PRIORITY 1: High-Precision Verbatim Excerpt Word Overlap Match (Highest Priority)
-        if (exactText && exactText.length >= 8) {
-          const targetWords = exactText.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w: string) => w.length >= 3);
-          
-          if (targetWords.length >= 3) {
-            // A. Single item word overlap score
-            let bestScore = 0;
-            let bestIdx = -1;
-
-            validItems.forEach((item: any, i: number) => {
-              const itemWords = (item.str || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w: string) => w.length >= 3);
-              if (itemWords.length < 3) return;
-
-              let matchCount = 0;
-              itemWords.forEach((w: string) => {
-                if (targetWords.includes(w)) matchCount++;
-              });
-
-              const score = matchCount / itemWords.length;
-              if (matchCount >= 4 && score >= 0.4) {
-                matchingIndices.add(i);
-              } else if (score > bestScore && matchCount >= 3) {
-                bestScore = score;
-                bestIdx = i;
-              }
-            });
-
-            // B. If no multi-word line crossed 0.4 threshold, pick the single highest overlapping item
-            if (matchingIndices.size === 0 && bestIdx !== -1 && bestScore >= 0.35) {
-              matchingIndices.add(bestIdx);
-            }
-
-            // C. Sliding window check across 2 to 4 consecutive text items if exactText spans multiple lines
-            if (matchingIndices.size === 0) {
-              for (let i = 0; i < validItems.length; i++) {
-                let windowStr = '';
-                for (let j = i; j < Math.min(validItems.length, i + 4); j++) {
-                  windowStr += ' ' + ((validItems[j] as any).str || '');
-                  const normWindow = windowStr.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
-                  const normTarget = exactText.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
-                  if (normWindow.length >= 25 && (normTarget.includes(normWindow) || normWindow.includes(normTarget))) {
-                    for (let k = i; k <= j; k++) {
-                      matchingIndices.add(k);
-                    }
-                    break;
-                  }
-                }
-                if (matchingIndices.size > 0) break;
-              }
-            }
-          }
-        }
-
-        // PRIORITY 2: Schedule / Table Full Match (e.g. Schedule B, Exhibit A, Table)
-        if (matchingIndices.size === 0 && scheduleLetter) {
-          const startPattern = new RegExp(`^\\s*(?:SCHEDULE|EXHIBIT|TABLE)\\s+${scheduleLetter}\\b`, 'i');
-          const boundaryPattern = /^\s*(?:SCHEDULE\s+[A-Z]|EXHIBIT\s+[A-Z]|SIGNATURES\b)/i;
-
-          let capturing = false;
-          for (let i = 0; i < validItems.length; i++) {
-            const str = (validItems[i] as any).str.trim();
-            if (!capturing) {
-              if (startPattern.test(str)) {
-                capturing = true;
-                matchingIndices.add(i);
-              }
-            } else {
-              if (boundaryPattern.test(str) && !str.toUpperCase().includes(`SCHEDULE ${scheduleLetter}`)) {
-                break;
-              }
-              matchingIndices.add(i);
-            }
-          }
-        }
-
-        // PRIORITY 3: Strict Subsection N.P Boundary Match (e.g. Section 9.1 or 10.2)
-        if (matchingIndices.size === 0 && subSectionId) {
-          const startPattern = new RegExp(`(^|\\s|Section\\s*)${subSectionId.replace('.', '\\.')}\\b`, 'i');
-          const [secN, secP] = subSectionId.split('.').map(Number);
-          const nextSubSecPattern = isNaN(secP) ? null : new RegExp(`^\\s*${secN}\\.${secP + 1}\\b`, 'i');
-          const nextMajorSecPattern = isNaN(secN) ? null : new RegExp(`^\\s*${secN + 1}\\.\\s+[A-Z]`, 'i');
-          const boundaryPattern = /^\s*(?:SCHEDULE\b|SIGNATURES\b|EXHIBIT\b)/i;
-
-          let capturing = false;
-          for (let i = 0; i < validItems.length; i++) {
-            const str = (validItems[i] as any).str.trim();
-            if (!capturing) {
-              if (startPattern.test(str)) {
-                capturing = true;
-                matchingIndices.add(i);
-              }
-            } else {
-              // Stop immediately when reaching next subsection (N.P+1) or next major section (N+1)
-              const isNextSub = nextSubSecPattern ? nextSubSecPattern.test(str) : false;
-              const isNextMajor = nextMajorSecPattern ? nextMajorSecPattern.test(str) : false;
-              const isBoundary = boundaryPattern.test(str);
-              if (isNextSub || isNextMajor || isBoundary) {
-                break;
-              }
-              matchingIndices.add(i);
-            }
-          }
-        }
-
-        // PRIORITY 4: Major Section N Heading Line Only (e.g. "10. LIMITATION OF LIABILITY")
-        if (matchingIndices.size === 0 && majorSecId) {
-          const startPattern = new RegExp(`^\\s*(?:Section\\s*)?${majorSecId}\\.\\s+[A-Z]`, 'i');
-          for (let i = 0; i < validItems.length; i++) {
-            const str = (validItems[i] as any).str.trim();
-            if (startPattern.test(str)) {
-              matchingIndices.add(i);
-              break;
-            }
-          }
-        }
-
-        // Convert matching items to highlight bounding boxes
-        validItems.forEach((item: any, idx: number) => {
-          if (!matchingIndices.has(idx)) return;
-
-          const tx = item.transform;
-          const pdfX = tx[4];
-          const pdfY = tx[5];
-          const itemWidth = item.width || 0;
-          const itemHeight = item.height || (tx[0] ? Math.abs(tx[0]) : 12);
-
-          const [viewX, viewY] = viewport.convertToViewportPoint(pdfX, pdfY);
-          const scaledWidth = itemWidth * scale;
-          const scaledHeight = itemHeight * scale;
-
-          boxes.push({
-            left: Math.max(0, viewX - 2),
-            top: Math.max(0, viewY - scaledHeight - 1),
-            width: Math.max(scaledWidth + 4, 12),
-            height: Math.max(scaledHeight + 3, 10),
-            text: item.str,
-          });
-        });
-      }
-
-      setHighlights(boxes);
-    } catch (e: any) {
-      if (e.name !== 'RenderingCancelledException') {
-        console.error('Canvas render error:', e);
-      }
+  // Helper to scroll smoothy to target page
+  const scrollToPage = (p: number) => {
+    setCurrentPage(p);
+    const pageEl = document.getElementById(`pdf-page-${p}`);
+    if (pageEl) {
+      pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  }, [pdfDoc, currentPage, scale, pdfCitation, citationPage]);
+  };
 
-  useEffect(() => {
-    renderPage();
-  }, [renderPage]);
+  const handlePageVisible = (p: number) => {
+    setCurrentPage(p);
+  };
 
   if (!isPdfOpen) return null;
 
+  const pageNumbers = Array.from({ length: numPages }, (_, i) => i + 1);
+
+  // Side Panel Layout (Split-view inside Workspace)
   if (isSidePanel) {
     return (
-      <div className="w-full h-full flex flex-col overflow-hidden bg-[#0C0806] select-none">
-        <div className="shrink-0 h-14 flex items-center justify-between px-4 border-b border-white/8 bg-[#140E0A]/95">
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+      <div className="h-full flex flex-col overflow-hidden bg-[#0C0806] select-none">
+        {/* Panel Header */}
+        <div className="shrink-0 h-13 flex items-center justify-between px-4 border-b border-white/8 bg-[#140E0A]/95">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="w-7 h-7 rounded-lg bg-peach-500/15 border border-peach-500/25 flex items-center justify-center shrink-0">
               <FileText size={14} className="text-peach-400" />
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-slate-100 break-words leading-tight" title={selectedDoc?.filename}>
-                {selectedDoc?.filename ?? 'Contract PDF'}
-              </p>
-            </div>
+            <p className="text-xs font-bold text-slate-100 truncate" title={selectedDoc?.filename}>
+              {selectedDoc?.filename ?? 'Contract PDF'}
+            </p>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {loading ? (
-              <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-peach-500/10 border border-peach-500/20 text-peach-300 text-xs font-medium">
-                <Loader2 size={13} className="animate-spin text-peach-400" />
-                <span>Fetching PDF...</span>
-              </div>
-            ) : (
+            {!loading && (
               <>
+                {/* Pagination Controls */}
                 <div className="flex items-center gap-0.5 bg-white/5 border border-white/10 rounded-lg px-1.5 py-0.5">
                   <button
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    onClick={() => scrollToPage(Math.max(1, currentPage - 1))}
                     disabled={currentPage <= 1}
                     className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors cursor-pointer"
                     title="Previous Page"
@@ -357,7 +422,7 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
                     {currentPage}/{numPages}
                   </span>
                   <button
-                    onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
+                    onClick={() => scrollToPage(Math.min(numPages, currentPage + 1))}
                     disabled={currentPage >= numPages}
                     className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors cursor-pointer"
                     title="Next Page"
@@ -366,6 +431,7 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
                   </button>
                 </div>
 
+                {/* Zoom Controls */}
                 <div className="hidden sm:flex items-center gap-0.5 bg-white/5 border border-white/10 rounded-lg px-1 py-0.5">
                   <button
                     onClick={() => setScale((s) => Math.max(0.6, s - 0.15))}
@@ -409,7 +475,11 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
           </div>
         </div>
 
-        <div className="flex-1 relative bg-[#100B08] overflow-auto flex justify-center p-3 sm:p-4">
+        {/* Continuous Vertical Scroll Viewport */}
+        <div
+          ref={scrollContainerRef}
+          className="flex-1 relative bg-[#100B08] overflow-y-auto flex flex-col items-center p-3 sm:p-4"
+        >
           {loading && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0C0806]/80 z-20">
               <Loader2 size={28} className="text-peach-400 animate-spin" />
@@ -433,30 +503,24 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
             </div>
           )}
 
-          <div className="relative shadow-2xl rounded-md overflow-hidden border border-white/10 bg-white inline-block my-auto">
-            <canvas ref={canvasRef} className="block" />
-            {/* Natural Text Selection Highlighting Overlay */}
-            {highlights.map((hl, i) => (
-              <div
-                key={i}
-                style={{
-                  position: 'absolute',
-                  left: `${hl.left}px`,
-                  top: `${hl.top}px`,
-                  width: `${hl.width}px`,
-                  height: `${hl.height}px`,
-                  backgroundColor: 'rgba(51, 144, 255, 0.32)',
-                  mixBlendMode: 'multiply',
-                }}
-                className="rounded-[1px] pointer-events-none"
+          {pdfDoc &&
+            pageNumbers.map((p) => (
+              <PdfPageItem
+                key={p}
+                pdfDoc={pdfDoc}
+                pageNum={p}
+                scale={scale}
+                pdfCitation={pdfCitation}
+                citationPage={citationPage}
+                onVisible={handlePageVisible}
               />
             ))}
-          </div>
         </div>
       </div>
     );
   }
 
+  // Full Modal Layout
   return (
     <AnimatePresence>
       <div
@@ -496,10 +560,10 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
                 </div>
               ) : (
                 <>
-                  {/* Pagination buttons */}
+                  {/* Pagination controls */}
                   <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl px-2 py-1">
                     <button
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      onClick={() => scrollToPage(Math.max(1, currentPage - 1))}
                       disabled={currentPage <= 1}
                       className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors cursor-pointer"
                       title="Previous Page"
@@ -510,7 +574,7 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
                       {currentPage} / {numPages}
                     </span>
                     <button
-                      onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
+                      onClick={() => scrollToPage(Math.min(numPages, currentPage + 1))}
                       disabled={currentPage >= numPages}
                       className="p-1 text-slate-400 hover:text-slate-200 disabled:opacity-30 transition-colors cursor-pointer"
                       title="Next Page"
@@ -584,8 +648,11 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
             </div>
           </div>
 
-          {/* PDF Canvas Viewport Container */}
-          <div className="flex-1 relative bg-[#100B08] overflow-auto flex justify-center p-4 sm:p-6">
+          {/* Continuous Vertical Scroll Viewport */}
+          <div
+            ref={scrollContainerRef}
+            className="flex-1 relative bg-[#100B08] overflow-y-auto flex flex-col items-center p-4 sm:p-6"
+          >
             {loading && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0C0806]/80 z-20">
                 <Loader2 size={32} className="text-peach-400 animate-spin" />
@@ -609,27 +676,18 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
               </div>
             )}
 
-            {/* Document Page Canvas with Overlay Text Highlighting */}
-            <div className="relative shadow-2xl rounded-lg overflow-hidden border border-white/10 bg-white inline-block my-auto">
-              <canvas ref={canvasRef} className="block" />
-
-              {/* Natural Text Selection Highlighting Overlay */}
-              {highlights.map((hl, i) => (
-                <div
-                  key={i}
-                  style={{
-                    position: 'absolute',
-                    left: `${hl.left}px`,
-                    top: `${hl.top}px`,
-                    width: `${hl.width}px`,
-                    height: `${hl.height}px`,
-                    backgroundColor: 'rgba(51, 144, 255, 0.32)',
-                    mixBlendMode: 'multiply',
-                  }}
-                  className="rounded-[1px] pointer-events-none"
+            {pdfDoc &&
+              pageNumbers.map((p) => (
+                <PdfPageItem
+                  key={p}
+                  pdfDoc={pdfDoc}
+                  pageNum={p}
+                  scale={scale}
+                  pdfCitation={pdfCitation}
+                  citationPage={citationPage}
+                  onVisible={handlePageVisible}
                 />
               ))}
-            </div>
           </div>
         </motion.div>
       </div>
