@@ -32,7 +32,17 @@ class PageIndexParser:
                 raise RuntimeError("PageIndex failed to build document tree structure.")
             await asyncio.sleep(2)
 
-        tree_result = await loop.run_in_executor(None, lambda: client.get_tree(doc_id, node_summary=True))
+        try:
+            tree_result = await loop.run_in_executor(
+                None,
+                lambda: client.get_tree(doc_id, node_summary=True, include_text=True)
+            )
+        except Exception:
+            tree_result = await loop.run_in_executor(
+                None,
+                lambda: client.get_tree(doc_id, node_summary=True)
+            )
+
         tree_nodes = tree_result.get("result", [])
         return doc_id, tree_nodes
 
