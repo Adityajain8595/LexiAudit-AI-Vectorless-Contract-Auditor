@@ -136,7 +136,8 @@ const useWorkspaceStore = create<WorkspaceState>((set) => ({
     set(() => {
       const seen = new Set<string>();
       const uniqueDocs: Document[] = [];
-      for (const d of docs || []) {
+      const safeList = Array.isArray(docs) ? docs : [];
+      for (const d of safeList) {
         if (d && d.id && !seen.has(d.id)) {
           seen.add(d.id);
           uniqueDocs.push(d);
@@ -146,13 +147,15 @@ const useWorkspaceStore = create<WorkspaceState>((set) => ({
     }),
   addDocument: (doc) =>
     set((s) => ({
-      documents: [doc, ...s.documents.filter((d) => d.id !== doc.id)],
+      documents: [doc, ...(Array.isArray(s.documents) ? s.documents : []).filter((d) => d.id !== doc.id)],
     })),
   removeDocument: (docId) =>
     set((s) => {
-      const remainingDocs = s.documents.filter((d) => d.id !== docId);
+      const docsList = Array.isArray(s.documents) ? s.documents : [];
+      const sessList = Array.isArray(s.allSessions) ? s.allSessions : [];
+      const remainingDocs = docsList.filter((d) => d.id !== docId);
       const isSelected = s.selectedDocId === docId;
-      const remainingSessions = s.allSessions.filter((sess) => sess.document_id !== docId);
+      const remainingSessions = sessList.filter((sess) => sess.document_id !== docId);
       const newDocSessions = { ...s.sessions };
       delete newDocSessions[docId];
 
@@ -178,10 +181,13 @@ const useWorkspaceStore = create<WorkspaceState>((set) => ({
       selectedDoc: doc,
     }),
   updateDocumentData: (doc) =>
-    set((s) => ({
-      selectedDoc: s.selectedDocId === doc.id ? doc : s.selectedDoc,
-      documents: s.documents.map((d) => (d.id === doc.id ? { ...d, ...doc } : d)),
-    })),
+    set((s) => {
+      const docsList = Array.isArray(s.documents) ? s.documents : [];
+      return {
+        selectedDoc: s.selectedDocId === doc.id ? doc : s.selectedDoc,
+        documents: docsList.map((d) => (d.id === doc.id ? { ...d, ...doc } : d)),
+      };
+    }),
   clearSelectedDoc: () =>
     set({
       selectedDocId: null,
@@ -192,17 +198,18 @@ const useWorkspaceStore = create<WorkspaceState>((set) => ({
     }),
 
   allSessions: [],
-  setAllSessions: (sessions) => set({ allSessions: sessions }),
+  setAllSessions: (sessions) => set({ allSessions: Array.isArray(sessions) ? sessions : [] }),
   sessions: {},
   setSessions: (docId, sessions) =>
     set((s) => ({
-      sessions: { ...s.sessions, [docId]: sessions },
+      sessions: { ...s.sessions, [docId]: Array.isArray(sessions) ? sessions : [] },
     })),
   addSession: (session) =>
     set((s) => {
-      const docSessions = s.sessions[session.document_id] || [];
+      const docSessions = Array.isArray(s.sessions[session.document_id]) ? s.sessions[session.document_id] : [];
+      const allSessList = Array.isArray(s.allSessions) ? s.allSessions : [];
       return {
-        allSessions: [session, ...s.allSessions.filter((x) => x.id !== session.id)],
+        allSessions: [session, ...allSessList.filter((x) => x.id !== session.id)],
         sessions: {
           ...s.sessions,
           [session.document_id]: [session, ...docSessions.filter((x) => x.id !== session.id)],
@@ -212,10 +219,12 @@ const useWorkspaceStore = create<WorkspaceState>((set) => ({
   removeSession: (sessionId) =>
     set((s) => {
       const isSelected = s.selectedSessionId === sessionId;
-      const updatedAll = s.allSessions.filter((sess) => sess.id !== sessionId);
+      const allSessList = Array.isArray(s.allSessions) ? s.allSessions : [];
+      const updatedAll = allSessList.filter((sess) => sess.id !== sessionId);
       const updatedSessions: Record<string, ChatSession[]> = {};
       for (const [docId, list] of Object.entries(s.sessions)) {
-        updatedSessions[docId] = list.filter((sess) => sess.id !== sessionId);
+        const safeList = Array.isArray(list) ? list : [];
+        updatedSessions[docId] = safeList.filter((sess) => sess.id !== sessionId);
       }
       return {
         allSessions: updatedAll,
@@ -226,12 +235,14 @@ const useWorkspaceStore = create<WorkspaceState>((set) => ({
     }),
   renameSession: (sessionId, newTitle) =>
     set((s) => {
-      const updatedAll = s.allSessions.map((sess) =>
+      const allSessList = Array.isArray(s.allSessions) ? s.allSessions : [];
+      const updatedAll = allSessList.map((sess) =>
         sess.id === sessionId ? { ...sess, title: newTitle } : sess
       );
       const updatedSessions: Record<string, ChatSession[]> = {};
       for (const [docId, list] of Object.entries(s.sessions)) {
-        updatedSessions[docId] = list.map((sess) =>
+        const safeList = Array.isArray(list) ? list : [];
+        updatedSessions[docId] = safeList.map((sess) =>
           sess.id === sessionId ? { ...sess, title: newTitle } : sess
         );
       }
@@ -248,8 +259,8 @@ const useWorkspaceStore = create<WorkspaceState>((set) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   messages: [],
-  setMessages: (msgs) => set({ messages: msgs }),
-  addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
+  setMessages: (msgs) => set({ messages: Array.isArray(msgs) ? msgs : [] }),
+  addMessage: (msg) => set((s) => ({ messages: [...(Array.isArray(s.messages) ? s.messages : []), msg] })),
 
   isPdfOpen: false,
   pdfCitation: null,

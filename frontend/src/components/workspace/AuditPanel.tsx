@@ -227,8 +227,8 @@ export default function AuditPanel() {
 
   if (!selectedDoc) return null;
 
-  const risks = selectedDoc.risk_analysis || [];
-  const missing = selectedDoc.missing_clauses || [];
+  const risks = Array.isArray(selectedDoc?.risk_analysis) ? selectedDoc.risk_analysis : [];
+  const missing = Array.isArray(selectedDoc?.missing_clauses) ? selectedDoc.missing_clauses : [];
 
   const filteredRisks = risks.filter((r) => {
     if (filter === 'ALL') return true;

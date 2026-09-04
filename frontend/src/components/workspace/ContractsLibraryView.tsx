@@ -35,8 +35,9 @@ export default function ContractsLibraryView() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Filter documents by search
-  const filteredDocs = documents.filter((d) =>
-    d.filename.toLowerCase().includes(searchQuery.toLowerCase())
+  const docsList = Array.isArray(documents) ? documents : [];
+  const filteredDocs = docsList.filter((d) =>
+    d && d.filename && d.filename.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleInspectPdf = (doc: Document) => {
