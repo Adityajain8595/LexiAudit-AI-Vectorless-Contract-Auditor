@@ -119,10 +119,17 @@ class ContractAuditor:
                 "risk_clauses_count": len(out.get("risk_analysis", [])),
                 "missing_clauses_count": len(out.get("missing_clauses", []))
             })
+            if hasattr(trace, "end"):
+                trace.end(output={
+                    "risk_clauses_count": len(out.get("risk_analysis", [])),
+                    "missing_clauses_count": len(out.get("missing_clauses", []))
+                })
             return out
 
         except Exception as e:
             span.end(output={"error": str(e)})
+            if hasattr(trace, "end"):
+                trace.end(output={"error": str(e)})
             return {"risk_analysis": [], "missing_clauses": [], "suggested_queries": []}
 
 _auditor_instance = ContractAuditor()

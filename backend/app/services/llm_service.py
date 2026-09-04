@@ -1,6 +1,6 @@
 import re
 import json
-from typing import List, Type, TypeVar, Dict, Optional
+from typing import List, Type, TypeVar, Dict, Optional, Any
 from pydantic import BaseModel
 from langchain_groq import ChatGroq
 from app.core import settings
@@ -15,6 +15,22 @@ class GroqLLMService:
     """
     def __init__(self):
         self._clients: Dict[str, ChatGroq] = {}
+        self._last_usage: Dict[str, int] = {}
+
+    def _record_usage(self, response: Any):
+        try:
+            meta = getattr(response, "response_metadata", {}) or {}
+            usage = getattr(response, "usage_metadata", None) or meta.get("token_usage", {})
+            if usage:
+                inp = usage.get("input_tokens") or usage.get("prompt_tokens", 0)
+                out = usage.get("output_tokens") or usage.get("completion_tokens", 0)
+                tot = usage.get("total_tokens") or (inp + out)
+                self._last_usage = {"input": int(inp), "output": int(out), "total": int(tot)}
+        except Exception:
+            pass
+
+    def get_last_usage(self) -> Dict[str, int]:
+        return dict(self._last_usage)
 
     def get_llm(self, model: Optional[str] = None, temperature: float = 0.0, max_tokens: Optional[int] = None) -> ChatGroq:
         model_name = model or settings.PRIMARY_GROQ_MODEL
@@ -61,12 +77,14 @@ class GroqLLMService:
         try:
             llm = self.get_llm(model=primary_model, temperature=temperature, max_tokens=max_tokens)
             response = await llm.ainvoke(messages)
+            self._record_usage(response)
             return str(response.content).strip()
         except Exception as err:
             if primary_model != fallback_model:
                 print(f"Groq chat on {primary_model} failed: {err}, falling back to {fallback_model}...")
                 fallback_llm = self.get_llm(model=fallback_model, temperature=temperature, max_tokens=max_tokens)
                 response = await fallback_llm.ainvoke(messages)
+                self._record_usage(response)
                 return str(response.content).strip()
             raise err
 
@@ -212,3 +230,6 @@ async def llm_chat(messages: List[Dict[str, str]], model: Optional[str] = None, 
 
 async def llm_structured(messages: List[Dict[str, str]], pydantic_cls: Type[T], model: Optional[str] = None, temperature: float = 0.0, max_tokens: Optional[int] = None) -> T:
     return await _groq_engine.structured(messages, pydantic_cls, model=model, temperature=temperature, max_tokens=max_tokens)
+
+def get_last_token_usage() -> Dict[str, int]:
+    return _groq_engine.get_last_usage()

@@ -130,7 +130,7 @@ async def query_contract_rag(payload: QueryRequest, current_user: dict = Depends
     # Run single-pass RAG pipeline with trace observation
     result = await run_rag_direct(query=sanitized_query, tree=doc_tree, chat_history=prior_messages, trace=trace)
 
-    trace_id = getattr(trace, "id", None)
+    trace_id = getattr(trace, "trace_id", getattr(trace, "id", None))
     if trace_id:
         result["trace_id"] = trace_id
 
@@ -147,6 +147,28 @@ async def query_contract_rag(payload: QueryRequest, current_user: dict = Depends
             print(f"Error persisting assistant message: {db_err}")
 
     asyncio.create_task(asyncio.to_thread(save_assistant_msg))
+
+    # Close the root trace cleanly
+    if hasattr(trace, "end"):
+        trace.end(output={"answer": result.get("answer", "")[:500], "cited_nodes_count": len(result.get("cited_nodes", []))})
+
+    # Asynchronously evaluate turn quality and log LLM judge scores to Langfuse trace & session
+    async def run_turn_eval():
+        try:
+            from app.services.eval_service import evaluate_rag_turn
+            await evaluate_rag_turn(
+                query=sanitized_query,
+                retrieved_nodes=result.get("cited_nodes", []),
+                tree=doc_tree,
+                generated_answer=result.get("answer", ""),
+                trace_id=trace_id,
+                session_id=payload.session_id
+            )
+            flush_telemetry()
+        except Exception as eval_err:
+            print(f"Background turn evaluation note: {eval_err}")
+
+    asyncio.create_task(run_turn_eval())
     
     # Flush telemetry events to Langfuse
     flush_telemetry()

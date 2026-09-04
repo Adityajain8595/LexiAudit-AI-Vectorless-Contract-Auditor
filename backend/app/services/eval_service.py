@@ -111,12 +111,12 @@ class EvaluationEngine:
             reasoning_summary=f"Precision: {prec_res.justification} | Recall: {rec_res.justification} | Faithfulness: {faith_res.justification} | Relevancy: {rel_res.justification}"
         )
         
-        if trace_id and trace_id != "mock-trace-id":
+        if (trace_id and trace_id != "mock-trace-id") or session_id:
             try:
-                log_eval_score(trace_id, report.context_precision, comment=prec_res.justification, name="eval_context_precision")
-                log_eval_score(trace_id, report.context_recall, comment=rec_res.justification, name="eval_context_recall")
-                log_eval_score(trace_id, report.faithfulness, comment=faith_res.justification, name="eval_faithfulness")
-                log_eval_score(trace_id, report.answer_relevancy, comment=rel_res.justification, name="eval_relevancy")
+                log_eval_score(trace_id, report.context_precision, comment=prec_res.justification, name="eval_context_precision", session_id=session_id)
+                log_eval_score(trace_id, report.context_recall, comment=rec_res.justification, name="eval_context_recall", session_id=session_id)
+                log_eval_score(trace_id, report.faithfulness, comment=faith_res.justification, name="eval_faithfulness", session_id=session_id)
+                log_eval_score(trace_id, report.answer_relevancy, comment=rel_res.justification, name="eval_relevancy", session_id=session_id)
             except Exception as e:
                 print(f"Langfuse scoring note: {e}")
                 

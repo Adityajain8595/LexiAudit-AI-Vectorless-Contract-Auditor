@@ -46,7 +46,7 @@ function RiskRow({
   onViewPdf,
 }: {
   clause: RiskClause;
-  onViewPdf: (page: string | number, text: string) => void;
+  onViewPdf: (clause: RiskClause) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const cfg = RISK_CONFIG[clause.risk_level] || RISK_CONFIG.MEDIUM;
@@ -80,7 +80,7 @@ function RiskRow({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onViewPdf(clause.page_number, clause.extracted_text);
+              onViewPdf(clause);
             }}
             title="Inspect in PDF"
             className="flex items-center gap-1 text-[10px] font-semibold text-peach-400 hover:text-peach-300 bg-peach-500/10 hover:bg-peach-500/20 border border-peach-500/20 px-2 py-1 rounded-lg transition-colors cursor-pointer"
@@ -239,13 +239,14 @@ export default function AuditPanel() {
   const mediumCount = risks.filter((r) => r.risk_level === 'MEDIUM').length;
   const lowCount = risks.filter((r) => r.risk_level === 'LOW').length;
 
-  const handleInspect = (page: string | number, text: string) => {
+  const handleInspect = (clause: RiskClause) => {
     openPdf({
-      node_id: 'inspect',
-      title: selectedDoc.filename,
-      page_index: page,
-      summary: 'Audited Section',
-      exact_text: text,
+      node_id: 'risk-analysis',
+      title: clause.section_title || clause.clause_name,
+      page_index: clause.page_number,
+      summary: clause.clause_name,
+      exact_text: clause.extracted_text,
+      source_type: 'risk_analysis',
     });
   };
 

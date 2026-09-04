@@ -69,7 +69,7 @@ async def upload_document(
 
     # Autonomous risk and missing protections audit
     try:
-        audit_results = await automatic_audit(tree_nodes, user_id=current_user["id"])
+        audit_results = await automatic_audit(tree_nodes, doc_id=doc_id, user_id=current_user["id"])
     except Exception as audit_err:
         audit_results = {"risk_analysis": [], "missing_clauses": [], "suggested_queries": []}
 

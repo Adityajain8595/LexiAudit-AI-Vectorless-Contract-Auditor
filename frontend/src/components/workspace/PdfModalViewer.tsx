@@ -17,6 +17,19 @@ interface HighlightBox {
   width: number;
   height: number;
   text: string;
+  isRisk?: boolean;
+}
+
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+interface PageWordToken {
+  word: string;
+  rawWord: string;
+  itemIndex: number;
+  charStart: number;
+  charEnd: number;
 }
 
 interface PdfPageItemProps {
@@ -110,149 +123,328 @@ function PdfPageItem({
           if (cancelled) return;
 
           const boxes: HighlightBox[] = [];
-          const validItems = textContent.items.filter((item: any) => 'str' in item && item.str && item.str.trim().length > 0);
-          const matchingIndices = new Set<number>();
-
-          const schedMatch = citationTitle.match(/\bSchedule\s+([A-Za-z0-9]+)\b/i) ||
-                             exactText.match(/^\s*#*\s*SCHEDULE\s+([A-Za-z0-9]+)\b/i);
-          const scheduleLetter = schedMatch ? schedMatch[1].toUpperCase() : '';
-
-          let subSectionId = '';
-          if (!scheduleLetter) {
-            const titleSubSecMatch = citationTitle.match(/(?:Section|Sec\.?|Clause)?\s*\b(\d+\.\d+)\b/i) ||
-                                     exactText.match(/(?:Section|Sec\.?|Clause)?\s*\b(\d+\.\d+)\b/i);
-            if (titleSubSecMatch) {
-              subSectionId = titleSubSecMatch[1].trim();
-            }
+          const validItems = (textContent.items.filter((item: any) => 'str' in item && item.str && item.str.trim().length > 0) as any[]);
+          if (validItems.length === 0) {
+            setHighlights([]);
+            return;
           }
 
-          const majorSecMatch = !scheduleLetter && !subSectionId ? (
-            citationTitle.match(/\b(?:Section|Sec\.?)\s*(\d+)\b/i) ||
-            exactText.match(/^\s*(?:Section|Sec\.?)\s*(\d+)\b/i)
+          const sourceType = pdfCitation?.source_type || '';
+          const nodeId = String(pdfCitation?.node_id || '');
+
+          // Check whether this is a Risk Analysis excerpt
+          const isRiskAnalysis =
+            sourceType === 'risk_analysis' ||
+            nodeId.startsWith('risk') ||
+            nodeId === 'inspect' ||
+            (!sourceType && exactText.length >= 25 && !/^(?:Section|Sec\.?|Clause|Schedule|Table)\s+[A-Za-z0-9.]+(?:\s*,\s*Page\s*\d+)?$/i.test(exactText));
+
+          // Detect Subsection Identifier (e.g. "Section A.a" -> "A.a", "10.2", "4.1")
+          const subSecMatch =
+            citationTitle.match(/(?:Section|Sec\.?|Clause|Paragraph)?\s*\b([A-Za-z0-9]+)\.([A-Za-z0-9]+)\b/i) ||
+            exactText.match(/(?:Section|Sec\.?|Clause|Paragraph)?\s*\b([A-Za-z0-9]+)\.([A-Za-z0-9]+)\b/i) ||
+            citationTitle.match(/(?:Section|Sec\.?|Clause)?\s*\b([A-Za-z0-9]+)\s*\(([A-Za-z0-9]+)\)/i) ||
+            exactText.match(/(?:Section|Sec\.?|Clause)?\s*\b([A-Za-z0-9]+)\s*\(([A-Za-z0-9]+)\)/i);
+
+          const isSubsection = Boolean(subSecMatch) && (sourceType === 'subsection' || !isRiskAnalysis);
+          const subSectionId = subSecMatch
+            ? (subSecMatch[2] ? `${subSecMatch[1]}.${subSecMatch[2]}` : `${subSecMatch[1]}(${subSecMatch[2]})`)
+            : '';
+
+          // Detect Schedule or Table (e.g. "Schedule A", "Table 1")
+          const schedTableMatch =
+            citationTitle.match(/\b(?:Schedule|Table|Exhibit|Appendix|Annex)\s+([A-Za-z0-9]+)\b/i) ||
+            exactText.match(/^\s*#*\s*(?:SCHEDULE|TABLE|EXHIBIT|APPENDIX|ANNEX)\s+([A-Za-z0-9]+)\b/i);
+          const schedTableId = schedTableMatch ? schedTableMatch[1].toUpperCase() : '';
+          const schedTableType = schedTableMatch ? schedTableMatch[0].trim().split(/\s+/)[0].toUpperCase() : '';
+
+          // Detect Major Section (e.g. "Section A", "Section 10")
+          const majorSecMatch = (!isSubsection && !schedTableId) ? (
+            citationTitle.match(/\b(?:Section|Sec\.?|Article|Clause)\s*([A-Za-z0-9]+)\b/i) ||
+            exactText.match(/^\s*(?:Section|Sec\.?|Article|Clause)\s*([A-Za-z0-9]+)\b/i) ||
+            citationTitle.match(/^\s*([A-Za-z0-9]+)\.\s+[A-Z]/i)
           ) : null;
           const majorSecId = majorSecMatch ? majorSecMatch[1].trim() : '';
 
-          if (exactText && exactText.length >= 8) {
-            const targetWords = exactText.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w: string) => w.length >= 3);
-            if (targetWords.length >= 3) {
-              let bestScore = 0;
-              let bestIdx = -1;
-
-              validItems.forEach((item: any, i: number) => {
-                const itemWords = (item.str || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w: string) => w.length >= 3);
-                if (itemWords.length < 3) return;
-
-                let matchCount = 0;
-                itemWords.forEach((w: string) => {
-                  if (targetWords.includes(w)) matchCount++;
-                });
-
-                const score = matchCount / itemWords.length;
-                if (matchCount >= 4 && score >= 0.4) {
-                  matchingIndices.add(i);
-                } else if (score > bestScore && matchCount >= 3) {
-                  bestScore = score;
-                  bestIdx = i;
+          // ─── ENGINE 1: Risk Analysis Word-to-Word Sequential Matching & Boundary Capping ───
+          if (isRiskAnalysis && exactText && exactText.length >= 8) {
+            // Build sequential word tokens for validItems
+            const pageTokens: PageWordToken[] = [];
+            for (let i = 0; i < validItems.length; i++) {
+              const itemStr = (validItems[i] as any).str || '';
+              const wordRegex = /\S+/g;
+              let m: RegExpExecArray | null;
+              while ((m = wordRegex.exec(itemStr)) !== null) {
+                const raw = m[0];
+                const clean = raw.toLowerCase().replace(/^[^\w]+|[^\w]+$/g, '');
+                if (clean.length > 0) {
+                  pageTokens.push({
+                    word: clean,
+                    rawWord: raw,
+                    itemIndex: i,
+                    charStart: m.index,
+                    charEnd: m.index + raw.length,
+                  });
                 }
-              });
+              }
+            }
 
-              if (matchingIndices.size === 0 && bestIdx !== -1 && bestScore >= 0.35) {
-                matchingIndices.add(bestIdx);
+            // Extract query words from excerpt
+            const cleanExcerpt = exactText
+              .replace(/^[“"'\s`\[]+|[”"'\s`\]]+$/g, '')
+              .replace(/\.{3,}|…/g, ' ')
+              .trim();
+
+            const rawQueryWords = cleanExcerpt.match(/\S+/g) || [];
+            const queryWords = rawQueryWords
+              .map((w: string) => w.toLowerCase().replace(/^[^\w]+|[^\w]+$/g, ''))
+              .filter((w: string) => w.length > 0);
+
+            if (queryWords.length > 0 && pageTokens.length > 0) {
+              let matchStartToken: PageWordToken | null = null;
+              let matchEndToken: PageWordToken | null = null;
+
+              // Pass 1: Exact contiguous word sequence match
+              const qLen = queryWords.length;
+              for (let p = 0; p <= pageTokens.length - qLen; p++) {
+                let exactSeq = true;
+                for (let k = 0; k < qLen; k++) {
+                  if (pageTokens[p + k].word !== queryWords[k]) {
+                    exactSeq = false;
+                    break;
+                  }
+                }
+                if (exactSeq) {
+                  matchStartToken = pageTokens[p];
+                  matchEndToken = pageTokens[p + qLen - 1];
+                  break;
+                }
               }
 
-              if (matchingIndices.size === 0) {
-                for (let i = 0; i < validItems.length; i++) {
-                  let windowStr = '';
-                  for (let j = i; j < Math.min(validItems.length, i + 4); j++) {
-                    windowStr += ' ' + ((validItems[j] as any).str || '');
-                    const normWindow = windowStr.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
-                    const normTarget = exactText.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
-                    if (normWindow.length >= 25 && (normTarget.includes(normWindow) || normWindow.includes(normTarget))) {
-                      for (let k = i; k <= j; k++) {
-                        matchingIndices.add(k);
+              // Pass 2: High-confidence contiguous window matching (>= 70% word match)
+              if (!matchStartToken && qLen >= 4) {
+                let bestScore = 0;
+                let bestWindowStart = -1;
+                let bestWindowEnd = -1;
+
+                for (let p = 0; p < pageTokens.length; p++) {
+                  if (pageTokens[p].word === queryWords[0] || (qLen > 1 && pageTokens[p].word === queryWords[1])) {
+                    let matchedCount = 0;
+                    let lastMatchedIdx = p;
+                    let qIdx = pageTokens[p].word === queryWords[0] ? 0 : 1;
+
+                    for (let step = p; step < Math.min(pageTokens.length, p + qLen + 6); step++) {
+                      if (qIdx < qLen && pageTokens[step].word === queryWords[qIdx]) {
+                        matchedCount++;
+                        lastMatchedIdx = step;
+                        qIdx++;
+                      } else if (qIdx + 1 < qLen && pageTokens[step].word === queryWords[qIdx + 1]) {
+                        matchedCount++;
+                        lastMatchedIdx = step;
+                        qIdx += 2;
                       }
-                      break;
+                    }
+
+                    const score = matchedCount / qLen;
+                    if (score > bestScore && score >= 0.70) {
+                      bestScore = score;
+                      bestWindowStart = p;
+                      bestWindowEnd = lastMatchedIdx;
                     }
                   }
-                  if (matchingIndices.size > 0) break;
+                }
+
+                if (bestWindowStart !== -1 && bestWindowEnd !== -1) {
+                  matchStartToken = pageTokens[bestWindowStart];
+                  matchEndToken = pageTokens[bestWindowEnd];
+                }
+              }
+
+              // Apply strict boundary capping to compute exact bounding boxes
+              if (matchStartToken && matchEndToken) {
+                const startItemIdx = matchStartToken.itemIndex;
+                const endItemIdx = matchEndToken.itemIndex;
+
+                for (let idx = startItemIdx; idx <= endItemIdx; idx++) {
+                  const item = validItems[idx];
+                  const itemStr = item.str || '';
+                  const strLen = Math.max(1, itemStr.length);
+
+                  const charStart = (idx === startItemIdx) ? Math.max(0, matchStartToken.charStart) : 0;
+                  const charEnd = (idx === endItemIdx) ? Math.min(strLen, matchEndToken.charEnd) : strLen;
+
+                  if (charEnd <= charStart) continue;
+
+                  const tx = item.transform;
+                  const pdfX = tx[4];
+                  const pdfY = tx[5];
+                  const [viewX, viewY] = viewport.convertToViewportPoint(pdfX, pdfY);
+                  const itemWidth = (item.width || 0) * scale;
+                  const itemHeight = (item.height || (tx[0] ? Math.abs(tx[0]) : 12)) * scale;
+
+                  // Proportional horizontal sub-slicing for boundary capping
+                  const leftFrac = Math.max(0, Math.min(1, charStart / strLen));
+                  const rightFrac = Math.max(0, Math.min(1, charEnd / strLen));
+                  const subLeft = viewX + leftFrac * itemWidth;
+                  const subWidth = Math.max(2, (rightFrac - leftFrac) * itemWidth);
+
+                  boxes.push({
+                    left: subLeft,
+                    top: viewY - itemHeight,
+                    width: subWidth,
+                    height: itemHeight,
+                    text: itemStr.substring(charStart, charEnd),
+                    isRisk: true,
+                  });
                 }
               }
             }
           }
 
-          if (matchingIndices.size === 0 && scheduleLetter) {
-            const startPattern = new RegExp(`^\\s*(?:SCHEDULE|EXHIBIT|TABLE)\\s+${scheduleLetter}\\b`, 'i');
-            const boundaryPattern = /^\s*(?:SCHEDULE\s+[A-Z]|EXHIBIT\s+[A-Z]|SIGNATURES\b)/i;
-            let capturing = false;
-            for (let i = 0; i < validItems.length; i++) {
-              const str = (validItems[i] as any).str.trim();
-              if (!capturing) {
-                if (startPattern.test(str)) {
-                  capturing = true;
+          // ─── ENGINE 2: Missing Clauses & Query Responses (Section vs. Subsection) ───
+          if (boxes.length === 0) {
+            const matchingIndices = new Set<number>();
+
+            // Case A: Subsection Citation (e.g. "Section A.a", "Section 10.2", "Clause 4.1", "10.2")
+            // Requirement: Highlight ONLY the A.a line/content in the section only
+            if (isSubsection && subSectionId) {
+              const escapedSub = escapeRegExp(subSectionId);
+              const startPattern = new RegExp(`(?:^|\\s|Section\\s*|Clause\\s*)${escapedSub}\\b`, 'i');
+
+              // Determine next subsection or next major section pattern for boundary capping
+              let nextSubPattern: RegExp | null = null;
+              let nextMajorPattern: RegExp | null = null;
+
+              const dotParts = subSectionId.split('.');
+              if (dotParts.length === 2) {
+                const parentPart = dotParts[0];
+                const childPart = dotParts[1];
+                const childNum = parseInt(childPart, 10);
+                const parentNum = parseInt(parentPart, 10);
+
+                if (!isNaN(childNum)) {
+                  // e.g. 10.2 -> next is 10.3 or next major 11
+                  nextSubPattern = new RegExp(`^\\s*(?:Section\\s*)?${escapeRegExp(parentPart)}\\.${childNum + 1}\\b`, 'i');
+                  if (!isNaN(parentNum)) {
+                    nextMajorPattern = new RegExp(`^\\s*(?:Section\\s*)?${parentNum + 1}[\\.:\\s—\\-]+[A-Z]|^\\s*SECTION\\s+${parentNum + 1}\\b`, 'i');
+                  }
+                } else if (childPart.length === 1 && /^[a-zA-Z]$/.test(childPart)) {
+                  // e.g. A.a -> next is A.b or next major B
+                  const nextChar = String.fromCharCode(childPart.charCodeAt(0) + 1);
+                  nextSubPattern = new RegExp(`^\\s*(?:Section\\s*)?${escapeRegExp(parentPart)}\\.${nextChar}\\b`, 'i');
+                  if (parentPart.length === 1 && /^[a-zA-Z]$/.test(parentPart)) {
+                    const nextParentChar = String.fromCharCode(parentPart.charCodeAt(0) + 1);
+                    nextMajorPattern = new RegExp(`^\\s*(?:Section\\s*)?${nextParentChar}[\\.:\\s—\\-]+[A-Z]|^\\s*SECTION\\s+${nextParentChar}\\b`, 'i');
+                  }
+                }
+              }
+
+              // General fallback boundary: any other numbered/lettered subsection or major header
+              const genericNextSubPattern = new RegExp(`^\\s*(?:Section\\s*)?[A-Za-z0-9]+\\.[A-Za-z0-9]+\\b`, 'i');
+              const boundaryPattern = /^\s*(?:SCHEDULE\b|SIGNATURES\b|EXHIBIT\b|TABLE\b|IN WITNESS WHEREOF\b)/i;
+
+              let capturing = false;
+              for (let i = 0; i < validItems.length; i++) {
+                const str = (validItems[i] as any).str.trim();
+                if (!capturing) {
+                  if (startPattern.test(str)) {
+                    capturing = true;
+                    matchingIndices.add(i);
+                  }
+                } else {
+                  // Stop before the next subsection or next section boundary
+                  const isNextSub = nextSubPattern ? nextSubPattern.test(str) : (genericNextSubPattern.test(str) && !startPattern.test(str));
+                  const isNextMajor = nextMajorPattern ? nextMajorPattern.test(str) : false;
+                  const isBoundary = boundaryPattern.test(str);
+                  if (isNextSub || isNextMajor || isBoundary) {
+                    break;
+                  }
                   matchingIndices.add(i);
                 }
-              } else {
-                if (boundaryPattern.test(str) && !str.toUpperCase().includes(`SCHEDULE ${scheduleLetter}`)) break;
-                matchingIndices.add(i);
               }
             }
-          }
 
-          if (matchingIndices.size === 0 && subSectionId) {
-            const startPattern = new RegExp(`(^|\\s|Section\\s*)${subSectionId.replace('.', '\\.')}\\b`, 'i');
-            const [secN, secP] = subSectionId.split('.').map(Number);
-            const nextSubSecPattern = isNaN(secP) ? null : new RegExp(`^\\s*${secN}\\.${secP + 1}\\b`, 'i');
-            const nextMajorSecPattern = isNaN(secN) ? null : new RegExp(`^\\s*${secN + 1}\\.\\s+[A-Z]`, 'i');
-            const boundaryPattern = /^\s*(?:SCHEDULE\b|SIGNATURES\b|EXHIBIT\b)/i;
+            // Case B: Schedule or Table (e.g. "Schedule A", "Table 1")
+            // Requirement: Highlight all its subsections/contents including heading
+            if (matchingIndices.size === 0 && schedTableId) {
+              const startPattern = new RegExp(`^\\s*(?:${schedTableType || 'SCHEDULE|TABLE|EXHIBIT'})\\s+${escapeRegExp(schedTableId)}\\b`, 'i');
+              const boundaryPattern = new RegExp(`^\\s*(?:SCHEDULE|TABLE|EXHIBIT|SECTION)\\s+(?!${escapeRegExp(schedTableId)}\\b)[A-Za-z0-9]+\\b|^\\s*(?:SIGNATURES|IN WITNESS WHEREOF)\\b`, 'i');
 
-            let capturing = false;
-            for (let i = 0; i < validItems.length; i++) {
-              const str = (validItems[i] as any).str.trim();
-              if (!capturing) {
-                if (startPattern.test(str)) {
-                  capturing = true;
+              let capturing = false;
+              for (let i = 0; i < validItems.length; i++) {
+                const str = (validItems[i] as any).str.trim();
+                if (!capturing) {
+                  if (startPattern.test(str)) {
+                    capturing = true;
+                    matchingIndices.add(i);
+                  }
+                } else {
+                  if (boundaryPattern.test(str) && !str.toUpperCase().includes(schedTableId)) {
+                    break;
+                  }
                   matchingIndices.add(i);
                 }
+              }
+            }
+
+            // Case C: Major Section Cited (e.g. "Section A", "Section 10")
+            // Requirement: Highlight ALL its subsections/contents including heading
+            if (matchingIndices.size === 0 && majorSecId) {
+              const escapedMajor = escapeRegExp(majorSecId);
+              const startPattern = new RegExp(`^\\s*(?:Section|Sec\.?|Article|Clause)?\\s*${escapedMajor}[\\.:\\s—\\-]+[A-Z]|^\\s*SECTION\\s+${escapedMajor}\\b`, 'i');
+
+              // Determine next major section for boundary capping
+              let nextMajorPattern: RegExp;
+              const majorNum = parseInt(majorSecId, 10);
+              if (!isNaN(majorNum)) {
+                nextMajorPattern = new RegExp(`^\\s*(?:Section|Sec\.?|Article|Clause)?\\s*${majorNum + 1}[\\.:\\s—\\-]+[A-Z]|^\\s*SECTION\\s+${majorNum + 1}\\b|^\\s*(?:SCHEDULE|EXHIBIT|TABLE|SIGNATURES|IN WITNESS WHEREOF)\\b`, 'i');
+              } else if (majorSecId.length === 1 && /^[a-zA-Z]$/.test(majorSecId)) {
+                const nextChar = String.fromCharCode(majorSecId.charCodeAt(0) + 1);
+                nextMajorPattern = new RegExp(`^\\s*(?:Section|Sec\.?|Article|Clause)?\\s*${nextChar}[\\.:\\s—\\-]+[A-Z]|^\\s*SECTION\\s+${nextChar}\\b|^\\s*(?:SCHEDULE|EXHIBIT|TABLE|SIGNATURES|IN WITNESS WHEREOF)\\b`, 'i');
               } else {
-                const isNextSub = nextSubSecPattern ? nextSubSecPattern.test(str) : false;
-                const isNextMajor = nextMajorSecPattern ? nextMajorSecPattern.test(str) : false;
-                const isBoundary = boundaryPattern.test(str);
-                if (isNextSub || isNextMajor || isBoundary) break;
-                matchingIndices.add(i);
+                nextMajorPattern = /^\s*(?:Section|Sec\.?|Article|Clause)?\s*[0-9A-Z]+[\.:\s—\-]+[A-Z]|^\s*(?:SCHEDULE|EXHIBIT|TABLE|SIGNATURES)\b/i;
+              }
+
+              let capturing = false;
+              for (let i = 0; i < validItems.length; i++) {
+                const str = (validItems[i] as any).str.trim();
+                if (!capturing) {
+                  if (startPattern.test(str)) {
+                    capturing = true;
+                    matchingIndices.add(i); // heading line
+                  }
+                } else {
+                  // Stop at the start of the next major section
+                  if (nextMajorPattern.test(str) && !startPattern.test(str)) {
+                    break;
+                  }
+                  matchingIndices.add(i); // all subsections, contents, body paragraphs
+                }
               }
             }
-          }
 
-          if (matchingIndices.size === 0 && majorSecId) {
-            const startPattern = new RegExp(`^\\s*(?:Section\\s*)?${majorSecId}\\.\\s+[A-Z]`, 'i');
-            for (let i = 0; i < validItems.length; i++) {
-              const str = (validItems[i] as any).str.trim();
-              if (startPattern.test(str)) {
-                matchingIndices.add(i);
-                break;
-              }
-            }
-          }
+            // Map matching indices to bounding boxes
+            validItems.forEach((item: any, idx: number) => {
+              if (!matchingIndices.has(idx)) return;
+              const tx = item.transform;
+              const pdfX = tx[4];
+              const pdfY = tx[5];
+              const itemWidth = item.width || 0;
+              const itemHeight = item.height || (tx[0] ? Math.abs(tx[0]) : 12);
+              const [viewX, viewY] = viewport.convertToViewportPoint(pdfX, pdfY);
+              const scaledWidth = itemWidth * scale;
+              const scaledHeight = itemHeight * scale;
 
-          validItems.forEach((item: any, idx: number) => {
-            if (!matchingIndices.has(idx)) return;
-            const tx = item.transform;
-            const pdfX = tx[4];
-            const pdfY = tx[5];
-            const itemWidth = item.width || 0;
-            const itemHeight = item.height || (tx[0] ? Math.abs(tx[0]) : 12);
-            const [viewX, viewY] = viewport.convertToViewportPoint(pdfX, pdfY);
-            const scaledWidth = itemWidth * scale;
-            const scaledHeight = itemHeight * scale;
-
-            boxes.push({
-              left: viewX,
-              top: viewY - scaledHeight,
-              width: scaledWidth,
-              height: scaledHeight,
-              text: item.str,
+              boxes.push({
+                left: viewX,
+                top: viewY - scaledHeight,
+                width: scaledWidth,
+                height: scaledHeight,
+                text: item.str,
+                isRisk: false,
+              });
             });
-          });
+          }
 
           setHighlights(boxes);
         } else {
@@ -270,15 +462,34 @@ function PdfPageItem({
     };
   }, [pdfDoc, pageNum, scale, pdfCitation, citationPage]);
 
-  // Auto-scroll directly to highlighted text element when highlights finish rendering
+  // Auto-pan / scroll directly to highlighted text element immediately when highlights finish rendering
   useEffect(() => {
     if (highlights.length > 0 && pageNum === citationPage) {
       const timer = setTimeout(() => {
+        const pageEl = containerRef.current;
+        if (!pageEl) return;
+
+        // Immediate precise panning on the scrollable container
+        const scrollContainer = pageEl.closest('.overflow-y-auto') as HTMLElement | null;
+        if (scrollContainer && highlights[0]) {
+          const pageTop = pageEl.offsetTop;
+          const hlTop = highlights[0].top;
+          const viewportHeight = scrollContainer.clientHeight || window.innerHeight;
+          // Position highlight comfortably 1/3 from the top of the viewport
+          const targetScrollTop = Math.max(0, pageTop + hlTop - viewportHeight / 3);
+
+          scrollContainer.scrollTo({
+            top: targetScrollTop,
+            behavior: 'smooth',
+          });
+        }
+
+        // Fallback smooth centering
         const hlEl = document.getElementById(`pdf-highlight-${pageNum}`);
         if (hlEl) {
           hlEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-      }, 100);
+      }, 50);
       return () => clearTimeout(timer);
     }
   }, [highlights, pageNum, citationPage]);
@@ -300,10 +511,13 @@ function PdfPageItem({
             top: `${hl.top}px`,
             width: `${hl.width}px`,
             height: `${hl.height}px`,
-            backgroundColor: 'rgba(51, 144, 255, 0.32)',
+            backgroundColor: hl.isRisk ? 'rgba(255, 138, 76, 0.38)' : 'rgba(56, 189, 248, 0.35)',
+            boxShadow: hl.isRisk
+              ? '0 0 0 1.5px rgba(255, 117, 76, 0.8), 0 0 10px rgba(255, 117, 76, 0.35)'
+              : '0 0 0 1px rgba(56, 189, 248, 0.6)',
             mixBlendMode: 'multiply',
           }}
-          className="rounded-[1px] pointer-events-none"
+          className={`rounded-[2px] pointer-events-none ${hl.isRisk && i === 0 ? 'animate-pulse' : ''}`}
         />
       ))}
     </div>

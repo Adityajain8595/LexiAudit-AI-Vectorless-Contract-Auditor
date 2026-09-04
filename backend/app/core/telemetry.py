@@ -21,15 +21,24 @@ class NullSpan:
 class NullTrace(NullSpan):
     """Mock trace."""
     id = "mock-trace-id"
+    trace_id = "mock-trace-id"
     def score(self, *args, **kwargs):
         pass
 
 class SpanWrapper:
     """Universal adapter for Langfuse spans and observations across SDK versions."""
-    def __init__(self, raw_span: Any, name: str = ""):
+    def __init__(self, raw_span: Any, name: str = "", context_manager: Any = None, is_trace: bool = False):
         self._raw = raw_span
         self.name = name
-        self.id = getattr(raw_span, "id", getattr(raw_span, "trace_id", "mock-span-id"))
+        self._cm = context_manager
+        self.is_trace = is_trace
+        raw_trace_id = getattr(raw_span, "trace_id", None)
+        raw_span_id = getattr(raw_span, "id", None)
+        self.trace_id = str(raw_trace_id or raw_span_id or "mock-trace-id")
+        if is_trace and raw_trace_id:
+            self.id = str(raw_trace_id)
+        else:
+            self.id = str(raw_span_id or self.trace_id)
 
     def end(self, output: Any = None, **kwargs):
         if hasattr(self._raw, "update") and output is not None:
@@ -42,6 +51,12 @@ class SpanWrapper:
                 self._raw.end()
             except Exception:
                 pass
+        if self._cm is not None:
+            try:
+                self._cm.__exit__(None, None, None)
+                self._cm = None
+            except Exception:
+                pass
 
     def update(self, *args, **kwargs):
         if hasattr(self._raw, "update"):
@@ -49,6 +64,21 @@ class SpanWrapper:
                 self._raw.update(*args, **kwargs)
             except Exception:
                 pass
+
+    def score(self, name: str, value: float, comment: Optional[str] = None, **kwargs):
+        if hasattr(self._raw, "score_trace"):
+            try:
+                self._raw.score_trace(name=name, value=value, comment=comment)
+                return
+            except Exception:
+                pass
+        if hasattr(self._raw, "score"):
+            try:
+                self._raw.score(name=name, value=value, comment=comment)
+                return
+            except Exception:
+                pass
+        _telemetry_manager.submit_score(self.trace_id, value, comment=comment, name=name)
 
     def span(self, name: str, input: Optional[Any] = None, metadata: Optional[Dict[str, Any]] = None, **kwargs):
         return _telemetry_manager.create_span(self._raw, name, input_data=input, metadata=metadata)
@@ -99,9 +129,10 @@ class TelemetryManager:
         if not client:
             return NullTrace(name)
         try:
+            trace_tags = tags or ["production", "legal-contract-auditor"]
             meta = {
                 **(metadata or {}),
-                "tags": tags or ["production", "legal-contract-auditor"]
+                "tags": trace_tags
             }
             if session_id:
                 meta["session_id"] = session_id
@@ -114,16 +145,33 @@ class TelemetryManager:
                     session_id=session_id,
                     user_id=user_id,
                     metadata=meta,
-                    tags=tags or ["production", "legal-contract-auditor"]
+                    tags=trace_tags
                 )
-                return SpanWrapper(trace_obj, name)
+                return SpanWrapper(trace_obj, name, is_trace=True)
             elif hasattr(client, "start_observation"):
+                # In Langfuse SDK v4, propagate_attributes sets first-class user_id,
+                # session_id, trace_name, and tags on the OpenTelemetry trace context
+                cm = None
+                try:
+                    import langfuse
+                    if hasattr(langfuse, "propagate_attributes"):
+                        cm = langfuse.propagate_attributes(
+                            user_id=user_id,
+                            session_id=session_id,
+                            trace_name=name,
+                            tags=trace_tags,
+                            metadata=meta
+                        )
+                        cm.__enter__()
+                except Exception as ctx_err:
+                    print(f"Context propagation note: {ctx_err}")
+
                 obs = client.start_observation(
                     name=name,
-                    as_type="span",
+                    as_type="chain",
                     metadata=meta
                 )
-                return SpanWrapper(obs, name)
+                return SpanWrapper(obs, name, context_manager=cm, is_trace=True)
         except Exception as e:
             print(f"Langfuse trace creation note: {e}")
         return NullTrace(name)
@@ -181,10 +229,9 @@ class TelemetryManager:
                     input=prompt,
                     output=completion,
                     model_parameters=model_parameters or {},
-                    metadata=metadata or {}
+                    metadata=metadata or {},
+                    usage_details=usage or {}
                 )
-                if hasattr(gen, "update"):
-                    gen.update(output=completion, usage_details=usage or {})
                 if hasattr(gen, "end"):
                     gen.end()
                 return SpanWrapper(gen, name)
@@ -204,25 +251,34 @@ class TelemetryManager:
 
     def submit_score(
         self,
-        trace_id: str,
+        trace_id: Optional[str],
         score: float,
         comment: Optional[str] = None,
-        name: str = "eval_score"
+        name: str = "eval_score",
+        session_id: Optional[str] = None
     ):
         client = self.get_client()
-        if not client or trace_id == "mock-trace-id":
+        if not client:
+            return
+        valid_trace_id = trace_id if (trace_id and trace_id != "mock-trace-id") else None
+        if not valid_trace_id and not session_id:
             return
         try:
             if hasattr(client, "create_score"):
-                client.create_score(
-                    name=name,
-                    value=score,
-                    trace_id=trace_id,
-                    comment=comment
-                )
-            elif hasattr(client, "score"):
+                kwargs = {
+                    "name": name,
+                    "value": score,
+                    "comment": comment
+                }
+                # Langfuse API accepts either trace_id OR session_id (not both simultaneously)
+                if valid_trace_id:
+                    kwargs["trace_id"] = valid_trace_id
+                elif session_id:
+                    kwargs["session_id"] = session_id
+                client.create_score(**kwargs)
+            elif hasattr(client, "score") and valid_trace_id:
                 client.score(
-                    trace_id=trace_id,
+                    trace_id=valid_trace_id,
                     name=name,
                     value=score,
                     comment=comment
@@ -252,8 +308,8 @@ def start_span(trace_or_parent, name: str, input_data: Optional[Any] = None, met
 def log_generation(trace_or_parent, name: str, model: str, prompt: Any, completion: Any, usage: Optional[Dict[str, int]] = None, model_parameters: Optional[Dict[str, Any]] = None, metadata: Optional[Dict[str, Any]] = None):
     return _telemetry_manager.log_generation_event(trace_or_parent, name, model, prompt, completion, usage, model_parameters, metadata)
 
-def log_eval_score(trace_id: str, score: float, comment: Optional[str] = None, name: str = "eval_score"):
-    return _telemetry_manager.submit_score(trace_id, score, comment, name)
+def log_eval_score(trace_id: Optional[str], score: float, comment: Optional[str] = None, name: str = "eval_score", session_id: Optional[str] = None):
+    return _telemetry_manager.submit_score(trace_id, score, comment, name, session_id=session_id)
 
 REQUIRED_PROMPT_KEYS = {
     "audit_human_template": ["risk_analysis", "remedy_recommendation", "missing_clauses", "suggested_language"],

@@ -50,45 +50,52 @@ function FormattedMessageWithInlineCitations({
 
         // 2. Extract clean section title and identifier (stripping page suffix)
         const citeWithoutPage = rawSubCite.replace(/(?:,\s*)?(?:page|p\.?)\s*\d+/i, '').trim();
-        const secNumMatch = citeWithoutPage.match(/(?:Section|Sec\.?|Clause|Schedule)?\s*\b(\d+(?:\.\d+)?)\b/i);
-        const extractedSecNum = secNumMatch ? secNumMatch[1] : '';
-        const majorSecId = extractedSecNum.includes('.') ? extractedSecNum.split('.')[0] : extractedSecNum;
-        const cleanCiteTitle = citeWithoutPage.toLowerCase().replace(/^(?:section|sec\.?|clause|schedule)\s*/i, '').trim();
+
+        // Detect if citation refers to a specific subsection (e.g. "Section A.a", "Section 10.2", "Clause 4.1", "10.2")
+        const subSecMatch = citeWithoutPage.match(/(?:Section|Sec\.?|Clause|Paragraph)?\s*\b([A-Za-z0-9]+)\.([A-Za-z0-9]+)\b/i) ||
+                            citeWithoutPage.match(/(?:Section|Sec\.?|Clause)?\s*\b([A-Za-z0-9]+)\s*\(([A-Za-z0-9]+)\)/i);
+        const isSubsection = Boolean(subSecMatch);
+        const subSecId = subSecMatch ? `${subSecMatch[1]}.${subSecMatch[2]}` : '';
+
+        // Detect if citation is a major section, schedule, or table (e.g. "Section A", "Section 10", "Schedule A", "Table 1")
+        const schedTableMatch = citeWithoutPage.match(/\b(?:Schedule|Table|Exhibit|Appendix|Annex)\s+([A-Za-z0-9]+)\b/i);
+        const majorSecMatch = !isSubsection ? citeWithoutPage.match(/\b(?:Section|Sec\.?|Article|Clause)\s+([A-Za-z0-9]+)\b/i) : null;
+        const majorSecId = majorSecMatch ? majorSecMatch[1] : (subSecMatch ? subSecMatch[1] : '');
 
         let targetNode: CitedNode | null = null;
         if (citedNodes && citedNodes.length > 0) {
-          // A. Match by section number (e.g. "9.1", "10.2", "9")
-          if (extractedSecNum) {
+          // A. Match by section / subsection identifier
+          if (subSecId) {
+            targetNode = citedNodes.find((n) => {
+              const nTitle = (n.title || '').toLowerCase();
+              return nTitle.includes(subSecId.toLowerCase()) || (n.exact_text || '').toLowerCase().includes(subSecId.toLowerCase());
+            }) || null;
+          } else if (majorSecId) {
             targetNode = citedNodes.find((n) => {
               const nTitle = (n.title || '').toLowerCase();
               return (
-                nTitle.includes(extractedSecNum) ||
-                nTitle.startsWith(extractedSecNum) ||
-                (majorSecId && (nTitle.startsWith(majorSecId + '.') || nTitle.includes(`section ${majorSecId}`)))
+                nTitle.includes(`section ${majorSecId.toLowerCase()}`) ||
+                nTitle.startsWith(`${majorSecId.toLowerCase()}.`) ||
+                nTitle.startsWith(majorSecId.toLowerCase())
               );
             }) || null;
+          } else if (schedTableMatch) {
+            const schedId = schedTableMatch[1].toLowerCase();
+            targetNode = citedNodes.find((n) => (n.title || '').toLowerCase().includes(schedId)) || null;
           }
 
-          // B. Match by title string (e.g. "9. indemnification")
-          if (!targetNode && cleanCiteTitle) {
-            targetNode = citedNodes.find((n) => {
-              const nTitle = (n.title || '').toLowerCase();
-              return nTitle.includes(cleanCiteTitle) || cleanCiteTitle.includes(nTitle);
-            }) || null;
-          }
-
-          // C. Match by page index + title keywords
-          if (!targetNode && parsedPageNum !== null) {
-            const titleKeywords = cleanCiteTitle.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length >= 4);
-            if (titleKeywords.length > 0) {
-              targetNode = citedNodes.find((n) =>
-                Number(n.page_index) === parsedPageNum &&
-                titleKeywords.some(w => (n.title || '').toLowerCase().includes(w))
-              ) || null;
+          // B. Match by title string
+          if (!targetNode && citeWithoutPage) {
+            const cleanTitle = citeWithoutPage.toLowerCase().replace(/^(?:section|sec\.?|clause|schedule|table)\s*/i, '').trim();
+            if (cleanTitle) {
+              targetNode = citedNodes.find((n) => {
+                const nTitle = (n.title || '').toLowerCase();
+                return nTitle.includes(cleanTitle) || cleanTitle.includes(nTitle);
+              }) || null;
             }
           }
 
-          // D. Fallback by page index ONLY if single node exists on that page
+          // C. Match by page index
           if (!targetNode && parsedPageNum !== null) {
             const pageNodes = citedNodes.filter((n) => Number(n.page_index) === parsedPageNum);
             if (pageNodes.length === 1) {
@@ -99,24 +106,33 @@ function FormattedMessageWithInlineCitations({
 
         const targetPage = parsedPageNum !== null ? parsedPageNum : (targetNode ? Number(targetNode.page_index) : 1);
 
-        // Pinpoint sub-clause extraction: if sectionId is a subsection (e.g. 10.2), isolate only that subclause
-        let highlightText = targetNode?.exact_text || targetNode?.title || rawSubCite;
-        const subNumMatch = rawSubCite.match(/\b(\d+\.\d+)\b/);
-        if (subNumMatch && targetNode?.exact_text) {
-          const subNum = subNumMatch[1];
-          const subRegex = new RegExp(`(?:^|\\n)\\s*${subNum.replace('.', '\\.')}\\b[\\s\\S]*?(?=(?:^|\\n)\\s*\\d+\\.\\d+|\\n\\s*\\d+\\.\\s+[A-Z]|$)`, 'i');
+        // Pinpoint sub-clause extraction: if sectionId is a subsection (e.g. 10.2 or A.a), isolate only that subclause
+        let highlightText = targetNode?.exact_text || targetNode?.title || citeWithoutPage || rawSubCite;
+        if (isSubsection && subSecId && targetNode?.exact_text) {
+          const escapedSub = subSecId.replace('.', '\\.');
+          const subRegex = new RegExp(`(?:^|\\n)\\s*(?:Section\\s*)?${escapedSub}\\b[\\s\\S]*?(?=(?:^|\\n)\\s*(?:Section\\s*)?[A-Za-z0-9]+\\.[A-Za-z0-9]+|\\n\\s*[A-Za-z0-9]+\\.\\s+[A-Z]|$)`, 'i');
           const subMatch = targetNode.exact_text.match(subRegex);
           if (subMatch) {
             highlightText = subMatch[0].trim();
           }
         }
 
+        const sourceType: 'risk_analysis' | 'section' | 'subsection' | 'query' =
+          targetNode?.source_type === 'risk_analysis'
+            ? 'risk_analysis'
+            : isSubsection
+            ? 'subsection'
+            : (majorSecMatch || schedTableMatch)
+            ? 'section'
+            : 'query';
+
         const effectiveNode: CitedNode = {
           node_id: targetNode?.node_id ? `${targetNode.node_id}-${subIdx}` : `cite-${targetPage}-${subIdx}`,
-          title: rawSubCite,
+          title: citeWithoutPage || rawSubCite,
           page_index: targetPage,
           summary: targetNode?.summary || 'Cited Provision',
           exact_text: highlightText,
+          source_type: sourceType,
         };
 
         parts.push(
@@ -346,6 +362,7 @@ function NaturalAuditReport({
     page_index: r.page_number || 1,
     summary: r.analysis || '',
     exact_text: r.extracted_text || r.clause_name || '',
+    source_type: 'risk_analysis',
   }));
 
   const handleCopyAll = () => {

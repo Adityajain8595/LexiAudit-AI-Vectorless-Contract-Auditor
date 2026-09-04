@@ -23,6 +23,7 @@ export interface CitedNode {
   page_index: string | number;
   summary: string;
   exact_text: string;
+  source_type?: 'risk_analysis' | 'section' | 'subsection' | 'query';
 }
 
 export interface Document {

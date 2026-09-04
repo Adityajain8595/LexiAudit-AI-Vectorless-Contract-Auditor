@@ -1,7 +1,7 @@
 import json
 from typing import List, Optional, Dict, Any
 from app.schemas.chat import TreeSearchOutput, RAGFollowUpOutput
-from app.services.llm_service import llm_chat, llm_structured
+from app.services.llm_service import llm_chat, llm_structured, get_last_token_usage
 from app.core import (
     redact_pii,
     start_trace,
@@ -134,7 +134,7 @@ class VectorlessRAGPipeline:
         chat_history: Optional[List[Dict[str, str]]] = None,
         trace: Any = None
     ) -> Dict[str, Any]:
-        trace = trace or start_trace("vectorless_rag_direct_pipeline")
+        trace = trace or start_trace("vectorless_rag_query")
         sanitized_query, _ = redact_pii(query)
         history_text = self.format_history(chat_history, max_turns=4)
 
@@ -205,12 +205,14 @@ class VectorlessRAGPipeline:
 
         try:
             raw_answer = await llm_chat(messages_synthesis, model=settings.PRIMARY_GROQ_MODEL, temperature=0.0, max_tokens=1024)
+            usage = get_last_token_usage()
             log_generation(
                 synth_span,
                 name="Synthesis Generation",
                 model=settings.PRIMARY_GROQ_MODEL,
                 prompt=messages_synthesis,
-                completion=raw_answer
+                completion=raw_answer,
+                usage=usage
             )
         except Exception as e:
             print(f"Direct synthesis LLM note: {e}")
