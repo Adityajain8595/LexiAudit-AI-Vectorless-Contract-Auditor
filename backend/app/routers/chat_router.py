@@ -9,11 +9,10 @@ from app.core import (
     check_guardrails,
     redact_pii,
     start_trace,
-    log_user_feedback,
     flush_telemetry,
     ResourceNotFoundException,
 )
-from app.schemas.chat import QueryRequest, ChatSessionCreate, FeedbackRequest
+from app.schemas.chat import QueryRequest, ChatSessionCreate
 from app.services.rag_service import run_rag_direct
 from app.services.export_service import generate_session_pdf
 from app.services.redis_cache import invalidate_session_tree
@@ -153,21 +152,6 @@ async def query_contract_rag(payload: QueryRequest, current_user: dict = Depends
     flush_telemetry()
 
     return result
-
-@router.post("/feedback")
-async def record_chat_feedback(payload: FeedbackRequest, current_user: dict = Depends(get_current_user)):
-    """
-    Submits thumbs-up / thumbs-down user feedback directly to the Langfuse trace.
-    """
-    if payload.trace_id:
-        log_user_feedback(
-            trace_id=payload.trace_id,
-            score=payload.score,
-            comment=payload.comment,
-            name="user_rating"
-        )
-        flush_telemetry()
-    return {"status": "success", "message": "Feedback recorded successfully"}
 
 @router.get("/export/{session_id}")
 async def export_session_pdf(session_id: str, current_user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):

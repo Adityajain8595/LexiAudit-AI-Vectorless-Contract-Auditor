@@ -198,12 +198,12 @@ class TelemetryManager:
             print(f"Langfuse generation error: {e}")
         return NullSpan(name)
 
-    def submit_feedback(
+    def submit_score(
         self,
         trace_id: str,
         score: float,
         comment: Optional[str] = None,
-        name: str = "user_rating"
+        name: str = "eval_score"
     ):
         client = self.get_client()
         if not client or trace_id == "mock-trace-id":
@@ -224,7 +224,7 @@ class TelemetryManager:
                     comment=comment
                 )
         except Exception as e:
-            print(f"Error logging feedback score to Langfuse: {e}")
+            print(f"Error logging eval score to Langfuse: {e}")
 
     def flush(self):
         client = self.get_client()
@@ -248,8 +248,8 @@ def start_span(trace_or_parent, name: str, input_data: Optional[Any] = None, met
 def log_generation(trace_or_parent, name: str, model: str, prompt: Any, completion: Any, usage: Optional[Dict[str, int]] = None, model_parameters: Optional[Dict[str, Any]] = None, metadata: Optional[Dict[str, Any]] = None):
     return _telemetry_manager.log_generation_event(trace_or_parent, name, model, prompt, completion, usage, model_parameters, metadata)
 
-def log_user_feedback(trace_id: str, score: float, comment: Optional[str] = None, name: str = "user_rating"):
-    return _telemetry_manager.submit_feedback(trace_id, score, comment, name)
+def log_eval_score(trace_id: str, score: float, comment: Optional[str] = None, name: str = "eval_score"):
+    return _telemetry_manager.submit_score(trace_id, score, comment, name)
 
 def get_prompt_template(prompt_name: str, fallback_template: str) -> str:
     client = _telemetry_manager.get_client()

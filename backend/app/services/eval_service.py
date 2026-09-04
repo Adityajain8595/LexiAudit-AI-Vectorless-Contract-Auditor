@@ -9,7 +9,7 @@ from app.schemas.eval import (
     EvaluationReport,
 )
 from app.services.llm_service import llm_structured
-from app.core import log_user_feedback, get_registered_prompt, settings
+from app.core import get_registered_prompt, log_eval_score, settings
 
 class EvaluationEngine:
     """
@@ -113,10 +113,10 @@ class EvaluationEngine:
         
         if trace_id and trace_id != "mock-trace-id":
             try:
-                log_user_feedback(trace_id, report.context_precision, comment=prec_res.justification, name="eval_context_precision")
-                log_user_feedback(trace_id, report.context_recall, comment=rec_res.justification, name="eval_context_recall")
-                log_user_feedback(trace_id, report.faithfulness, comment=faith_res.justification, name="eval_faithfulness")
-                log_user_feedback(trace_id, report.answer_relevancy, comment=rel_res.justification, name="eval_relevancy")
+                log_eval_score(trace_id, report.context_precision, comment=prec_res.justification, name="eval_context_precision")
+                log_eval_score(trace_id, report.context_recall, comment=rec_res.justification, name="eval_context_recall")
+                log_eval_score(trace_id, report.faithfulness, comment=faith_res.justification, name="eval_faithfulness")
+                log_eval_score(trace_id, report.answer_relevancy, comment=rel_res.justification, name="eval_relevancy")
             except Exception as e:
                 print(f"Langfuse scoring note: {e}")
                 

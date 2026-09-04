@@ -11,7 +11,6 @@ from .chat import (
     QueryRequest,
     QueryResponse,
     ChatSessionCreate,
-    FeedbackRequest,
 )
 from .eval import (
     ContextPrecisionOutput,
@@ -33,7 +32,6 @@ __all__ = [
     "QueryRequest",
     "QueryResponse",
     "ChatSessionCreate",
-    "FeedbackRequest",
     "ContextPrecisionOutput",
     "ContextRecallOutput",
     "ContextRecallPrecisionOutput",

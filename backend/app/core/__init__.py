@@ -3,7 +3,7 @@ from .database import get_supabase, execute_db_query
 from .auth import get_current_user
 from .security import redact_pii
 from .guardrails import check_guardrails
-from .telemetry import get_langfuse, start_trace, start_span, log_generation, log_user_feedback, flush_telemetry
+from .telemetry import get_langfuse, start_trace, start_span, log_generation, log_eval_score, flush_telemetry
 from .prompts import get_registered_prompt
 
 from .exceptions import (
@@ -30,7 +30,7 @@ __all__ = [
     "start_trace",
     "start_span",
     "log_generation",
-    "log_user_feedback",
+    "log_eval_score",
     "flush_telemetry",
     "get_registered_prompt",
     "LexiAuditException",

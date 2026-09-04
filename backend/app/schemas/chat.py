@@ -27,8 +27,4 @@ class ChatSessionCreate(BaseModel):
     document_id: str
     title: Optional[str] = "Contract Audit Session"
 
-class FeedbackRequest(BaseModel):
-    trace_id: Optional[str] = None
-    session_id: str
-    score: float = Field(ge=0.0, le=1.0, description="1.0 for positive (thumbs up), 0.0 for negative (thumbs down)")
-    comment: Optional[str] = None
+
