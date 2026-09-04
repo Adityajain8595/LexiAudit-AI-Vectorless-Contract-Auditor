@@ -1,4 +1,5 @@
 import re
+import json
 from typing import List, Type, TypeVar, Dict, Optional
 from pydantic import BaseModel
 from langchain_groq import ChatGroq
@@ -69,6 +70,42 @@ class GroqLLMService:
                 return str(response.content).strip()
             raise err
 
+    @classmethod
+    def _coerce_and_validate(cls, json_str: str, pydantic_cls: Type[T]) -> T:
+        try:
+            data = json.loads(json_str)
+        except Exception:
+            return pydantic_cls.model_validate_json(json_str)
+
+        if isinstance(data, dict):
+            # Coerce string-based missing_clauses into structured objects
+            raw_missing = data.get("missing_clauses")
+            if isinstance(raw_missing, list):
+                coerced = []
+                for item in raw_missing:
+                    if isinstance(item, str):
+                        coerced.append({
+                            "clause_name": item,
+                            "severity": "MEDIUM",
+                            "impact_description": f"Omitting this standard {item} provision creates legal and regulatory ambiguity between the parties.",
+                            "suggested_language": ""
+                        })
+                    else:
+                        coerced.append(item)
+                data["missing_clauses"] = coerced
+
+            # Ensure clause_name in risk_analysis is populated
+            raw_risks = data.get("risk_analysis")
+            if isinstance(raw_risks, list):
+                for r in raw_risks:
+                    if isinstance(r, dict):
+                        if (not r.get("clause_name") or r.get("clause_name") == "Clause") and r.get("section_title"):
+                            r["clause_name"] = r["section_title"]
+
+        if isinstance(data, dict):
+            return pydantic_cls.model_validate(data)
+        return pydantic_cls.model_validate_json(json_str)
+
     async def structured(
         self,
         messages: List[Dict[str, str]],
@@ -102,7 +139,7 @@ class GroqLLMService:
             if "{" in err_str and "}" in err_str:
                 try:
                     cleaned_json = self._extract_json(err_str)
-                    return pydantic_cls.model_validate_json(cleaned_json)
+                    return self._coerce_and_validate(cleaned_json, pydantic_cls)
                 except Exception:
                     pass
 
@@ -113,7 +150,7 @@ class GroqLLMService:
             raw_content = str(resp.content)
             cleaned = self._extract_json(raw_content)
             if cleaned:
-                return pydantic_cls.model_validate_json(cleaned)
+                return self._coerce_and_validate(cleaned, pydantic_cls)
         except Exception:
             pass
 
@@ -131,7 +168,7 @@ class GroqLLMService:
             if "{" in err_str2 and "}" in err_str2:
                 try:
                     cleaned_json = self._extract_json(err_str2)
-                    return pydantic_cls.model_validate_json(cleaned_json)
+                    return self._coerce_and_validate(cleaned_json, pydantic_cls)
                 except Exception:
                     pass
 
@@ -155,7 +192,7 @@ class GroqLLMService:
 
             cleaned = self._extract_json(raw_content)
             if cleaned:
-                return pydantic_cls.model_validate_json(cleaned)
+                return self._coerce_and_validate(cleaned, pydantic_cls)
         except Exception:
             pass
 

@@ -18,29 +18,44 @@ class PromptRegistry:
             "Every missing_clause MUST contain a descriptive clause_name, detailed multi-sentence impact_description of statutory or financial exposure, and a complete multi-line standard enterprise boilerplate clause."
         ),
         "audit_human_template": """
-Perform a comprehensive enterprise legal compliance audit on this contract. Output strictly a single valid JSON object.
+Perform a comprehensive enterprise legal compliance audit on this contract. Output strictly a single valid JSON object conforming to the schema below.
 
 DOCUMENT TREE:
 {document_tree}
 
 Extract strictly the Top 3 to 5 highest-risk clauses and critical missing safeguards.
 
-Every risk_analysis item MUST include non-empty values for:
-1. "clause_name": Descriptive title
-2. "risk_level": "HIGH", "MEDIUM", or "LOW"
-3. "section_title": Section name and number
-4. "page_number": Integer page number
-5. "extracted_text": Verbatim sentence from document
-6. "analysis": Multi-sentence assessment explaining financial, operational, and legal liability. NEVER write brief generic phrases like "Potential legal exposure".
-7. "remedy_recommendation": Concrete redline or counter-language recommendation to balance the terms.
+Output strictly in this JSON format:
+```json
+{{
+  "risk_analysis": [
+    {{
+      "clause_name": "Descriptive Legal Risk Title (e.g. Uncapped Holdover Tenancy Surcharge, Unilateral Price Escalation)",
+      "risk_level": "HIGH",
+      "section_title": "Section Name and Number (e.g. Section 2: Term, Commencement and Possession)",
+      "page_number": 1,
+      "extracted_text": "Complete verbatim sentence or paragraph excerpt from the document text",
+      "analysis": "In-depth multi-sentence assessment thoroughly explaining the statutory, operational, and financial liability exposure created by this provision.",
+      "remedy_recommendation": "Concrete redline or counter-language recommendation to balance the terms and protect the client."
+    }}
+  ],
+  "missing_clauses": [
+    {{
+      "clause_name": "Specific Standard Omitted Safeguard (e.g. Data Protection Addendum / DPA, Mutual Indemnification, Force Majeure)",
+      "severity": "HIGH",
+      "impact_description": "Detailed multi-sentence explanation of legal risk, regulatory liability, or operational exposure caused by its absence.",
+      "suggested_language": "Complete standard multi-line boilerplate legal clause (3+ lines) ready for insertion."
+    }}
+  ],
+  "suggested_queries": [
+    "Specific follow-up question 1 about numerical terms, dates, or financial limits in this contract",
+    "Specific follow-up question 2 about default, termination, or cure periods in this contract",
+    "Specific follow-up question 3 about liability caps, carve-outs, or dispute resolution in this contract"
+  ]
+}}
+```
 
-Every missing_clauses item MUST include:
-1. "clause_name": Name of standard omitted clause (e.g., Data Protection Addendum / DPA)
-2. "severity": "HIGH", "MEDIUM", or "LOW"
-3. "impact_description": Multi-sentence explanation of legal risk caused by its absence.
-4. "suggested_language": Complete standard boilerplate legal clause (3+ lines) to insert.
-
-Ensure "suggested_queries" contains exactly 3 context-specific legal questions.
+Ensure all keys (risk_analysis, missing_clauses, suggested_queries) are present and populated with substantive legal reasoning and language.
 """,
         "query_rewrite_prompt": """
 Given the following conversation history between a legal auditor and user, rewrite the latest follow-up question into a standalone, specific search query that incorporates necessary context from the conversation.

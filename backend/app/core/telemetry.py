@@ -255,6 +255,11 @@ def log_generation(trace_or_parent, name: str, model: str, prompt: Any, completi
 def log_eval_score(trace_id: str, score: float, comment: Optional[str] = None, name: str = "eval_score"):
     return _telemetry_manager.submit_score(trace_id, score, comment, name)
 
+REQUIRED_PROMPT_KEYS = {
+    "audit_human_template": ["risk_analysis", "remedy_recommendation", "missing_clauses", "suggested_language"],
+    "audit_system_prompt": ["clause_name", "remedy_recommendation"]
+}
+
 def get_prompt_template(prompt_name: str, fallback_template: str) -> str:
     client = _telemetry_manager.get_client()
     if not client:
@@ -262,10 +267,32 @@ def get_prompt_template(prompt_name: str, fallback_template: str) -> str:
     try:
         prompt_obj = client.get_prompt(prompt_name)
         if prompt_obj and prompt_obj.prompt:
-            return prompt_obj.prompt
+            remote_prompt = prompt_obj.prompt
+            required_keys = REQUIRED_PROMPT_KEYS.get(prompt_name, [])
+            if any(k not in remote_prompt for k in required_keys):
+                # Remote prompt in Langfuse is an outdated version missing critical schema fields
+                return fallback_template
+            return remote_prompt
     except Exception:
         pass
     return fallback_template
 
+def sync_prompt_to_langfuse(prompt_name: str, prompt_content: str) -> bool:
+    """Updates or publishes a prompt template to Langfuse Cloud under production label."""
+    client = _telemetry_manager.get_client()
+    if not client:
+        return False
+    try:
+        client.create_prompt(
+            name=prompt_name,
+            prompt=prompt_content,
+            labels=["latest", "production"]
+        )
+        return True
+    except Exception as e:
+        print(f"Failed to sync prompt {prompt_name} to Langfuse: {e}")
+        return False
+
 def flush_telemetry():
     _telemetry_manager.flush()
+
