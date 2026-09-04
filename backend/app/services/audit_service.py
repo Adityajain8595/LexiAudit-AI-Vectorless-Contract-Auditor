@@ -1,5 +1,4 @@
 import json
-import re
 from typing import Optional, Dict, Any, List
 
 from app.schemas.contract import AutomaticAuditOutput
@@ -53,7 +52,7 @@ class ContractAuditor:
                 "node_id": n["node_id"],
                 "title": n["title"],
                 "page_index": n["page_index"],
-                "summary": n.get("summary") or (n.get("text", ""))
+                "text": n.get("text") or n.get("summary", "")
             }
             for n in all_nodes
         ]
@@ -92,53 +91,33 @@ class ContractAuditor:
                 raw_level = str(item.get("risk_level", "MEDIUM")).strip().upper()
                 item["risk_level"] = risk_map.get(raw_level, "MEDIUM")
 
-                if not item.get("clause_name") or item.get("clause_name") == "Clause":
-                    item["clause_name"] = item.get("section_title") or "Contract Provision"
-
-                item_sec = str(item.get("section_title", "")).strip().lower()
-                item_clause = str(item.get("clause_name", "")).strip().lower()
+                item_sec = str(item.get("section_title", "")).strip()
+                item_clause = str(item.get("clause_name", "")).strip()
                 item_text = str(item.get("extracted_text", "")).strip()
 
+                # Find matching tree node by text or title
                 matched_node = None
                 for n in all_nodes:
                     n_title = str(n.get("title", "")).strip().lower()
                     n_text = str(n.get("text", "")).strip()
-                    if item_text and len(item_text) > 15 and item_text.lower() in n_text.lower():
+                    if item_text and len(item_text) > 15 and (item_text.lower() in n_text.lower() or n_text.lower() in item_text.lower()):
                         matched_node = n
                         break
-                    if item_clause and (item_clause in n_title or n_title in item_clause):
+                    if item_sec and (item_sec.lower() in n_title or n_title in item_sec.lower()):
                         matched_node = n
                         break
-                    if item_sec and (item_sec in n_title or n_title in item_sec):
+                    if item_clause and (item_clause.lower() in n_title or n_title in item_clause.lower()):
                         matched_node = n
                         break
-
-                sub_num = None
-                text_match = re.search(r'^\s*(\d+\.\d+)\b', item_text)
-                if text_match:
-                    sub_num = text_match.group(1)
-                elif matched_node:
-                    node_sub_match = re.search(r'\b(\d+\.\d+)\b', matched_node.get("title", ""))
-                    if node_sub_match:
-                        sub_num = node_sub_match.group(1)
-
-                if sub_num:
-                    item["section_title"] = f"Section {sub_num}"
-                elif matched_node:
-                    item["section_title"] = matched_node.get("title") or item.get("section_title")
 
                 if matched_node:
                     item["page_number"] = matched_node.get("page_index") or matched_node.get("page_number") or item.get("page_number") or 1
                     if matched_node.get("node_id"):
                         item["node_id"] = matched_node["node_id"]
-                    if not item.get("extracted_text") or len(item["extracted_text"]) < 5:
-                        item["extracted_text"] = matched_node.get("text") or matched_node.get("summary") or ""
 
             for missing in out.get("missing_clauses", []):
                 raw_sev = str(missing.get("severity", "MEDIUM")).strip().upper()
                 missing["severity"] = risk_map.get(raw_sev, "MEDIUM")
-                if not missing.get("clause_name") or missing.get("clause_name") == "Clause":
-                    missing["clause_name"] = "Protective Safeguard Provision"
 
             if len(out.get("suggested_queries", [])) > 3:
                 out["suggested_queries"] = out["suggested_queries"][:3]

@@ -270,6 +270,19 @@ function PdfPageItem({
     };
   }, [pdfDoc, pageNum, scale, pdfCitation, citationPage]);
 
+  // Auto-scroll directly to highlighted text element when highlights finish rendering
+  useEffect(() => {
+    if (highlights.length > 0 && pageNum === citationPage) {
+      const timer = setTimeout(() => {
+        const hlEl = document.getElementById(`pdf-highlight-${pageNum}`);
+        if (hlEl) {
+          hlEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [highlights, pageNum, citationPage]);
+
   return (
     <div
       ref={containerRef}
@@ -280,6 +293,7 @@ function PdfPageItem({
       {highlights.map((hl, i) => (
         <div
           key={i}
+          id={i === 0 ? `pdf-highlight-${pageNum}` : undefined}
           style={{
             position: 'absolute',
             left: `${hl.left}px`,
@@ -373,12 +387,17 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
     }
   }, [pdfCitation]);
 
-  // Helper to scroll smoothy to target page
+  // Helper to scroll smoothly to target page or highlighted text element
   const scrollToPage = (p: number) => {
     setCurrentPage(p);
-    const pageEl = document.getElementById(`pdf-page-${p}`);
-    if (pageEl) {
-      pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const hlEl = document.getElementById(`pdf-highlight-${p}`);
+    if (hlEl) {
+      hlEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+      const pageEl = document.getElementById(`pdf-page-${p}`);
+      if (pageEl) {
+        pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     }
   };
 

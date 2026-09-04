@@ -240,17 +240,19 @@ function generateNaturalAuditMarkdown(doc: Document): string {
       const rawLevel = String(r.risk_level || 'MEDIUM').toUpperCase();
       const riskLevel = riskMap[rawLevel] || 'MEDIUM';
       const pageStr = r.page_number ? `, Page ${r.page_number}` : '';
-      const clauseTitle = (!r.clause_name || r.clause_name === 'Clause') ? (r.section_title || `Risk Provision ${idx + 1}`) : r.clause_name;
+      const clauseTitle = r.clause_name || r.section_title || `Risk Provision ${idx + 1}`;
       const sectionTitle = r.section_title || clauseTitle;
       const citationRef = `[${sectionTitle}${pageStr}]`;
 
-      md += `#### ${idx + 1}. ${clauseTitle} (${riskLevel} RISK) ${citationRef}\n\n`;
+      md += `#### ${idx + 1}. ${clauseTitle} (${riskLevel} RISK)\n${citationRef}\n\n`;
       if (r.extracted_text) {
         md += `\`\`\`text\n${r.extracted_text.trim()}\n\`\`\`\n\n`;
       }
-      md += `- **Legal Assessment:** ${r.analysis?.trim() || 'Potential legal exposure.'}\n`;
+      if (r.analysis) {
+        md += `- **Legal Assessment:** ${r.analysis.trim()}\n`;
+      }
       if (r.remedy_recommendation) {
-        md += `- **Strategic Recommendation / Remedy:** ${r.remedy_recommendation.trim()}\n`;
+        md += `- **Strategic Recommendation / Counter-Language:** ${r.remedy_recommendation.trim()}\n`;
       }
       md += `\n---\n\n`;
     });
@@ -262,9 +264,12 @@ function generateNaturalAuditMarkdown(doc: Document): string {
     missing.forEach((m, idx) => {
       const rawSev = String(m.severity || 'MEDIUM').toUpperCase();
       const severity = riskMap[rawSev] || 'MEDIUM';
-      const gapTitle = (!m.clause_name || m.clause_name === 'Clause') ? `Protective Safeguard ${idx + 1}` : m.clause_name;
-      const impact = m.impact_description ? `\n\n- **Impact Assessment:** ${m.impact_description.trim()}\n` : '\n';
-      md += `#### Missing Protection ${idx + 1}: ${gapTitle} (${severity} Severity)${impact}\n`;
+      const gapTitle = m.clause_name || `Protective Safeguard ${idx + 1}`;
+
+      md += `#### Missing Protection ${idx + 1}: ${gapTitle} (${severity} Severity)\n\n`;
+      if (m.impact_description) {
+        md += `- **Impact Assessment:** ${m.impact_description.trim()}\n\n`;
+      }
       if (m.suggested_language) {
         md += `**Suggested Insertion Boilerplate:**\n\`\`\`text\n${m.suggested_language.trim()}\n\`\`\`\n\n`;
       }
