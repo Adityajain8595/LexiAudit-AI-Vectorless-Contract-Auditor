@@ -31,9 +31,9 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
-    const originalRequest = err.config;
+    const originalRequest = err.config || {};
 
-    // Auto-refresh token on 401 Unauthorized once
+    // 1. Auto-refresh token on 401 Unauthorized once
     if (err.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
@@ -48,9 +48,38 @@ api.interceptors.response.use(
       }
     }
 
-    const message = err.response?.data?.detail || err.message || 'An unexpected error occurred.';
+    // 2. Retry transient server waking / cold-start errors (502, 503, 504, Network Error) up to 2 times
+    const isTransientError =
+      !err.response ||
+      err.message === 'Network Error' ||
+      [502, 503, 504].includes(err.response?.status);
+
+    originalRequest._retryCount = originalRequest._retryCount || 0;
+
+    if (isTransientError && originalRequest._retryCount < 2 && originalRequest.method !== 'get_health') {
+      originalRequest._retryCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      return api(originalRequest);
+    }
+
+    // 3. Format clear, human-friendly exception messages for Uploads, Audits, & Queries
+    let message = err.response?.data?.detail || err.response?.data?.message || err.message || 'An unexpected error occurred.';
+
+    if (err.message === 'Network Error' || err.response?.status === 503 || err.response?.status === 502) {
+      message = 'Backend core server is waking up on Render. Please wait 15–30 seconds and try again.';
+    } else if (err.response?.status === 504) {
+      message = 'The contract audit request timed out. Please retry the upload or audit action.';
+    } else if (err.response?.status === 413) {
+      message = 'The uploaded document exceeds the maximum allowed file size (50MB).';
+    } else if (err.response?.status === 415) {
+      message = 'Invalid file format. Please upload a valid PDF document.';
+    } else if (err.response?.status === 400 && message.includes('safety')) {
+      message = 'Query blocked by security guardrails. Please ask a contract-focused legal audit question.';
+    }
+
     const apiError: any = new Error(message);
     apiError.status = err.response?.status;
+    apiError.code = err.response?.data?.error?.code || 'API_ERROR';
     apiError.response = err.response;
     return Promise.reject(apiError);
   }
@@ -59,7 +88,7 @@ api.interceptors.response.use(
 // ─── Health ───────────────────────────────────────────────────────────────────
 export const checkBackendHealth = async (): Promise<boolean> => {
   try {
-    const res = await axios.get(`${BASE_URL}/health`, { timeout: 3500 });
+    const res = await axios.get(`${BASE_URL}/health`, { timeout: 6000 });
     return res.status === 200 && res.data?.status === 'healthy';
   } catch {
     return false;
@@ -116,14 +145,26 @@ export const streamQuery = async (
   onEvent: (event: { type: string; [key: string]: any }) => void,
   signal?: AbortSignal
 ): Promise<void> => {
-  const res = await api.post('/api/chat/query', { session_id: sessionId, query }, { signal });
-  const data = res.data;
-  onEvent({
-    type: 'done',
-    answer: data.answer || 'No response generated.',
-    cited_nodes: data.cited_nodes || [],
-    suggested_queries: data.suggested_queries || [],
-  });
+  try {
+    const res = await api.post('/api/chat/query', { session_id: sessionId, query }, { signal });
+    const data = res.data;
+    onEvent({
+      type: 'done',
+      answer: data.answer || 'No response generated.',
+      cited_nodes: data.cited_nodes || [],
+      suggested_queries: data.suggested_queries || [],
+    });
+  } catch (err: any) {
+    if (axios.isCancel(err) || err.name === 'CanceledError' || err.name === 'AbortError') {
+      throw err;
+    }
+    const errorMsg = err.message || 'Failed to complete query. Please check your backend connection.';
+    onEvent({
+      type: 'error',
+      error: errorMsg,
+    });
+    throw new Error(errorMsg);
+  }
 };
 
 export const exportSessionPdf = async (sessionId: string): Promise<void> => {

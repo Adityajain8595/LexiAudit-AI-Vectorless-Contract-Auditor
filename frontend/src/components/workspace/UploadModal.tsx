@@ -259,12 +259,20 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
               </div>
               <h3 className="text-sm font-bold text-slate-100 mb-1">Audit Generation Failed</h3>
               <p className="text-xs text-red-400/90 mb-5 max-w-sm mx-auto">{errorMsg}</p>
-              <button
-                onClick={() => setStage('idle')}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 rounded-xl transition-colors cursor-pointer"
-              >
-                Try Again
-              </button>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  onClick={() => file ? handleUpload() : setStage('idle')}
+                  className="px-4 py-2 bg-[#F27A52] hover:bg-[#D95D34] text-xs font-bold text-white rounded-xl transition-all cursor-pointer shadow-lg shadow-[#F27A52]/20"
+                >
+                  Retry Upload & Audit
+                </button>
+                <button
+                  onClick={() => { setFile(null); setStage('idle'); }}
+                  className="px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-xs font-medium text-slate-300 rounded-xl transition-colors cursor-pointer"
+                >
+                  Choose Different File
+                </button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

@@ -334,12 +334,22 @@ export default function RagWelcomeScreen() {
             <p className="text-xs font-bold">Upload Failed</p>
             <p className="text-[11px] text-red-300 mt-0.5">{errorMessage}</p>
           </div>
-          <button
-            onClick={() => setUploadStatus('idle')}
-            className="text-xs text-red-400 hover:text-red-200 cursor-pointer font-bold ml-2"
-          >
-            Dismiss
-          </button>
+          <div className="flex items-center gap-2 ml-2">
+            {selectedFile && (
+              <button
+                onClick={() => handleDirectUpload(selectedFile)}
+                className="px-2.5 py-1 bg-[#F27A52] hover:bg-[#D95D34] text-white text-[11px] font-bold rounded-lg transition-colors cursor-pointer"
+              >
+                Retry
+              </button>
+            )}
+            <button
+              onClick={() => setUploadStatus('idle')}
+              className="text-xs text-red-400 hover:text-red-200 cursor-pointer font-bold px-1"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
     </div>
