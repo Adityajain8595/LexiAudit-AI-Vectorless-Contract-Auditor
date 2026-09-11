@@ -11,6 +11,17 @@ jobs:
     name: Backend Test Suite & Security Checks
     runs-on: ubuntu-latest
 
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -32,8 +43,11 @@ jobs:
           PAGEINDEX_API_KEY: ${{ secrets.PAGEINDEX_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_KEY }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          REDIS_URL: redis://localhost:6379/0
+          REDIS_AES_SECRET_KEY: "0123456789abcdef0123456789abcdef"
         run: |
           cd backend && pytest tests/ -v
 

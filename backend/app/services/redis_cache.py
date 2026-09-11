@@ -13,13 +13,8 @@ except ImportError:
 from app.core.config import settings
 from app.core.security import redact_pii
 
+# Redis tree caching service
 class ContractTreeCacheService:
-    """
-    Enterprise-grade secure caching engine for hierarchical contract trees.
-    Provides AES-256-GCM payload encryption, pre-cache PII redaction,
-    multi-tenant composite key indexing (user, session, doc), and strict Redis Cloud integration.
-    """
-
     def __init__(self):
         self._redis_client = None
         self._aesgcm: Optional[AESGCM] = None
@@ -37,29 +32,29 @@ class ContractTreeCacheService:
             self._aesgcm = AESGCM(self._get_encryption_key())
         return self._aesgcm
 
-    def _encrypt_payload(self, plain_text: str) -> str:
-        aesgcm = self._get_aesgcm()
+    # Encrypt payload using AES-GCM
+    def _encrypt_payload(self, text: str) -> str:
+        aes = self._get_aesgcm()
         nonce = os.urandom(12)
-        ciphertext = aesgcm.encrypt(nonce, plain_text.encode("utf-8"), None)
-        encrypted_blob = nonce + ciphertext
-        return base64.b64encode(encrypted_blob).decode("utf-8")
+        cipher = aes.encrypt(nonce, text.encode("utf-8"), None)
+        blob = nonce + cipher
+        return base64.b64encode(blob).decode("utf-8")
 
-    def _decrypt_payload(self, encrypted_b64: str) -> str:
-        aesgcm = self._get_aesgcm()
-        encrypted_blob = base64.b64decode(encrypted_b64.encode("utf-8"))
-        nonce = encrypted_blob[:12]
-        ciphertext = encrypted_blob[12:]
-        decrypted_bytes = aesgcm.decrypt(nonce, ciphertext, None)
-        return decrypted_bytes.decode("utf-8")
+    # Decrypt payload using AES-GCM
+    def _decrypt_payload(self, b64_text: str) -> str:
+        aes = self._get_aesgcm()
+        blob = base64.b64decode(b64_text.encode("utf-8"))
+        nonce = blob[:12]
+        cipher = blob[12:]
+        return aes.decrypt(nonce, cipher, None).decode("utf-8")
 
     def _sanitize_tree(self, tree: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not settings.ENABLE_PII_REDACTION or not tree:
             return tree
-
         try:
             tree_json = json.dumps(tree)
-            sanitized_json, _ = redact_pii(tree_json)
-            return json.loads(sanitized_json)
+            clean_json, _ = redact_pii(tree_json)
+            return json.loads(clean_json)
         except Exception:
             return tree
 
@@ -67,13 +62,12 @@ class ContractTreeCacheService:
         scope = session_id.strip() if session_id and session_id.strip() else "doc"
         return f"tree:{user_id}:{scope}:{doc_id}"
 
+    # Connect to Redis instance
     async def _get_redis(self):
         if self._redis_client is not None:
             return self._redis_client
-
         if not settings.TREE_CACHE_ENABLED or not settings.REDIS_URL or aioredis is None:
             return None
-
         try:
             self._redis_client = aioredis.from_url(
                 settings.REDIS_URL,
@@ -82,12 +76,11 @@ class ContractTreeCacheService:
                 socket_timeout=3.0,
                 retry_on_timeout=True
             )
-        except Exception as e:
-            print(f"[RedisCache] Connection initialization note: {e}")
+        except Exception:
             self._redis_client = None
-
         return self._redis_client
 
+    # Store encrypted tree in cache
     async def set_tree(
         self,
         user_id: str,
@@ -100,26 +93,25 @@ class ContractTreeCacheService:
             return False
 
         ttl = ttl_seconds if ttl_seconds is not None else settings.CACHE_TTL_SECONDS
-        sanitized_tree = self._sanitize_tree(tree)
-        plain_json = json.dumps(sanitized_tree)
-        encrypted_val = self._encrypt_payload(plain_json)
+        clean_tree = self._sanitize_tree(tree)
+        encrypted_val = self._encrypt_payload(json.dumps(clean_tree))
 
-        keys_to_set = [self._build_key(user_id, doc_id, session_id)]
+        keys = [self._build_key(user_id, doc_id, session_id)]
         if session_id and session_id != "doc":
-            keys_to_set.append(self._build_key(user_id, doc_id, "doc"))
+            keys.append(self._build_key(user_id, doc_id, "doc"))
 
-        redis_client = await self._get_redis()
-        if not redis_client:
+        client = await self._get_redis()
+        if not client:
             return False
 
         try:
-            for k in keys_to_set:
-                await redis_client.set(k, encrypted_val, ex=ttl)
+            for k in keys:
+                await client.set(k, encrypted_val, ex=ttl)
             return True
-        except Exception as e:
-            print(f"[RedisCache] Cache set error: {e}")
+        except Exception:
             return False
 
+    # Retrieve and decrypt tree
     async def get_tree(
         self,
         user_id: str,
@@ -129,65 +121,59 @@ class ContractTreeCacheService:
         if not user_id or not doc_id:
             return None
 
-        candidate_keys = []
+        keys = []
         if session_id and session_id != "doc":
-            candidate_keys.append(self._build_key(user_id, doc_id, session_id))
-        candidate_keys.append(self._build_key(user_id, doc_id, "doc"))
+            keys.append(self._build_key(user_id, doc_id, session_id))
+        keys.append(self._build_key(user_id, doc_id, "doc"))
 
-        redis_client = await self._get_redis()
-        if not redis_client:
+        client = await self._get_redis()
+        if not client:
             return None
 
         try:
-            for k in candidate_keys:
-                encrypted_val = await redis_client.get(k)
-                if encrypted_val:
-                    decrypted_json = self._decrypt_payload(encrypted_val)
-                    return json.loads(decrypted_json)
-        except Exception as e:
-            print(f"[RedisCache] Cache get error: {e}")
-
+            for k in keys:
+                val = await client.get(k)
+                if val:
+                    return json.loads(self._decrypt_payload(val))
+        except Exception:
+            pass
         return None
 
+    # Invalidate document cache
     async def invalidate_doc(self, user_id: str, doc_id: str) -> int:
         if not user_id or not doc_id:
             return 0
-
         pattern = f"tree:{user_id}:*:{doc_id}"
-        deleted_count = 0
-
-        redis_client = await self._get_redis()
-        if redis_client:
+        deleted = 0
+        client = await self._get_redis()
+        if client:
             try:
                 keys = []
-                async for key in redis_client.scan_iter(match=pattern):
-                    keys.append(key)
+                async for k in client.scan_iter(match=pattern):
+                    keys.append(k)
                 if keys:
-                    deleted_count = await redis_client.delete(*keys)
-            except Exception as e:
-                print(f"[RedisCache] Document invalidation error: {e}")
+                    deleted = await client.delete(*keys)
+            except Exception:
+                pass
+        return deleted
 
-        return deleted_count
-
+    # Invalidate session cache
     async def invalidate_session(self, user_id: str, session_id: str) -> int:
         if not user_id or not session_id:
             return 0
-
         pattern = f"tree:{user_id}:{session_id}:*"
-        deleted_count = 0
-
-        redis_client = await self._get_redis()
-        if redis_client:
+        deleted = 0
+        client = await self._get_redis()
+        if client:
             try:
                 keys = []
-                async for key in redis_client.scan_iter(match=pattern):
-                    keys.append(key)
+                async for k in client.scan_iter(match=pattern):
+                    keys.append(k)
                 if keys:
-                    deleted_count = await redis_client.delete(*keys)
-            except Exception as e:
-                print(f"[RedisCache] Session invalidation error: {e}")
-
-        return deleted_count
+                    deleted = await client.delete(*keys)
+            except Exception:
+                pass
+        return deleted
 
 _cache_service = ContractTreeCacheService()
 

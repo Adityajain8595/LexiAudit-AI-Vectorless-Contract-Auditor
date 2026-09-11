@@ -1,10 +1,7 @@
 from app.core.telemetry import get_prompt_template
 
+# Central prompt template registry
 class PromptRegistry:
-    """
-    Centralized Prompt Registry & Versioning Engine.
-    Manages base prompt templates with remote Langfuse Cloud resolution.
-    """
     DEFAULTS = {
         "audit_system_prompt": (
             "You are a Senior Enterprise Legal Compliance Auditor. You analyze hierarchical contract trees strictly "
@@ -194,6 +191,7 @@ Output strictly as JSON conforming to the schema.
 """
     }
 
+    # Fetch prompt with fallback template
     def get_prompt(self, name: str, **kwargs) -> str:
         fallback = self.DEFAULTS.get(name, "")
         template = get_prompt_template(name, fallback)
@@ -204,8 +202,7 @@ Output strictly as JSON conforming to the schema.
                 return template
         return template
 
-_prompt_registry = PromptRegistry()
+_registry = PromptRegistry()
 
 def get_registered_prompt(name: str, **kwargs) -> str:
-    """Functional facade for prompt resolution."""
-    return _prompt_registry.get_prompt(name, **kwargs)
+    return _registry.get_prompt(name, **kwargs)

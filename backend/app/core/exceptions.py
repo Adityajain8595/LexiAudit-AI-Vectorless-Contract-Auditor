@@ -6,136 +6,72 @@ from fastapi.exceptions import RequestValidationError
 
 logger = logging.getLogger("lexiaudit.exceptions")
 
+# Base domain error definition
 class LexiAuditException(Exception):
-    """
-    Base domain exception for all LexiAudit AI operations.
-    """
     def __init__(
         self,
-        message: str,
-        status_code: int = 500,
-        error_code: str = "INTERNAL_SERVER_ERROR",
-        user_friendly_message: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None
+        msg: str,
+        status: int = 500,
+        code: str = "INTERNAL_SERVER_ERROR",
+        info: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None
     ):
-        super().__init__(message)
-        self.message = message
-        self.status_code = status_code
-        self.error_code = error_code
-        self.user_friendly_message = user_friendly_message or (
-            "We encountered an issue processing your request. Please check your query or contract document."
-        )
-        self.details = details or {}
+        super().__init__(msg)
+        self.message = msg
+        self.status_code = status
+        self.error_code = code
+        self.user_message = info or msg
+        self.details = data or {}
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "success": False,
             "error": {
                 "code": self.error_code,
-                "message": self.user_friendly_message,
+                "message": self.user_message,
                 "technical_details": self.message,
                 "details": self.details
             }
         }
 
+# Domain specific error classes
 class LLMServiceException(LexiAuditException):
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        super().__init__(
-            message=message,
-            status_code=502,
-            error_code="LLM_SERVICE_ERROR",
-            user_friendly_message=(
-                "The legal reasoning model is currently busy or experiencing high traffic. "
-                "A fallback summary has been generated for your query."
-            ),
-            details=details
-        )
+    def __init__(self, msg: str, data: Optional[Dict[str, Any]] = None):
+        super().__init__(msg, 502, "LLM_SERVICE_ERROR", "LLM reasoning service error.", data)
 
 class PageIndexException(LexiAuditException):
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        super().__init__(
-            message=message,
-            status_code=502,
-            error_code="PAGEINDEX_PARSING_ERROR",
-            user_friendly_message=(
-                "Unable to fully parse the document hierarchy via PageIndex. "
-                "Document has been indexed with standard section fallback."
-            ),
-            details=details
-        )
+    def __init__(self, msg: str, data: Optional[Dict[str, Any]] = None):
+        super().__init__(msg, 502, "PAGEINDEX_PARSING_ERROR", "Document parsing error occurred.", data)
 
 class TreeCacheException(LexiAuditException):
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        super().__init__(
-            message=message,
-            status_code=503,
-            error_code="CACHE_ERROR",
-            user_friendly_message="Cache access temporarily unavailable. Falling back to persistent database storage.",
-            details=details
-        )
+    def __init__(self, msg: str, data: Optional[Dict[str, Any]] = None):
+        super().__init__(msg, 503, "CACHE_ERROR", "Cache service unavailable.", data)
 
 class DatabaseException(LexiAuditException):
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        super().__init__(
-            message=message,
-            status_code=500,
-            error_code="DATABASE_ERROR",
-            user_friendly_message="Database service operation encountered an error. Please retry shortly.",
-            details=details
-        )
+    def __init__(self, msg: str, data: Optional[Dict[str, Any]] = None):
+        super().__init__(msg, 500, "DATABASE_ERROR", "Database service error occurred.", data)
 
 class GuardrailViolationException(LexiAuditException):
-    def __init__(self, reason: str, violation_type: str = "prompt_injection"):
-        super().__init__(
-            message=f"Query rejected by safety guardrails: {violation_type}",
-            status_code=400,
-            error_code="SAFETY_VIOLATION",
-            user_friendly_message=reason,
-            details={"violation_type": violation_type}
-        )
+    def __init__(self, reason: str, kind: str = "prompt_injection"):
+        super().__init__(f"Safety violation: {kind}", 400, "SAFETY_VIOLATION", reason, {"violation": kind})
 
 class DocumentAuditException(LexiAuditException):
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        super().__init__(
-            message=message,
-            status_code=500,
-            error_code="AUDIT_REASONING_ERROR",
-            user_friendly_message=(
-                "Automated risk audit completed with baseline findings. "
-                "Specific clause-level analysis remains available in chat."
-            ),
-            details=details
-        )
+    def __init__(self, msg: str, data: Optional[Dict[str, Any]] = None):
+        super().__init__(msg, 500, "AUDIT_REASONING_ERROR", "Contract audit failed.", data)
 
 class ResourceNotFoundException(LexiAuditException):
-    def __init__(self, resource_name: str, resource_id: str):
-        super().__init__(
-            message=f"{resource_name} with ID '{resource_id}' was not found.",
-            status_code=404,
-            error_code="RESOURCE_NOT_FOUND",
-            user_friendly_message=f"The requested {resource_name.lower()} could not be found.",
-            details={"resource": resource_name, "id": resource_id}
-        )
+    def __init__(self, item: str, item_id: str):
+        super().__init__(f"{item} '{item_id}' not found.", 404, "RESOURCE_NOT_FOUND", f"{item} not found.", {"item": item, "id": item_id})
 
 class AuthenticationException(LexiAuditException):
-    def __init__(self, message: str = "Authentication required or credentials invalid."):
-        super().__init__(
-            message=message,
-            status_code=401,
-            error_code="UNAUTHORIZED",
-            user_friendly_message="Your session has expired or is invalid. Please sign in again."
-        )
+    def __init__(self, msg: str = "Authentication required."):
+        super().__init__(msg, 401, "UNAUTHORIZED", "Authentication credentials invalid.")
 
-
+# Application exception handler orchestrator
 class LexiAuditExceptionHandler:
-    """
-    Centralized Exception & Fallback Orchestrator.
-    Guarantees structured JSON responses for unexpected application errors.
-    """
-
+    # Map exceptions to status and payload
     @classmethod
     def handle_exception(cls, exc: Exception) -> Tuple[int, Dict[str, Any]]:
-        """Maps any exception to HTTP status code and standard JSON error dictionary."""
         if isinstance(exc, LexiAuditException):
             return exc.status_code, exc.to_dict()
 
@@ -149,44 +85,34 @@ class LexiAuditExceptionHandler:
                 }
             }
 
-        logger.error(f"Unhandled system error: {exc}", exc_info=True)
+        logger.error(f"Unhandled error: {exc}", exc_info=True)
         return 500, {
             "success": False,
             "error": {
                 "code": "INTERNAL_SERVER_ERROR",
-                "message": "An unexpected system error occurred. A fallback response has been generated.",
+                "message": "Internal server error occurred.",
                 "technical_details": str(exc)
             }
         }
 
     @classmethod
-    def create_json_response(cls, exc: Exception, request: Optional[Request] = None) -> JSONResponse:
-        status_code, payload = cls.handle_exception(exc)
-        return JSONResponse(status_code=status_code, content=payload)
+    def create_json_response(cls, exc: Exception, req: Optional[Request] = None) -> JSONResponse:
+        status, payload = cls.handle_exception(exc)
+        return JSONResponse(status_code=status, content=payload)
 
-    @classmethod
-    def get_audit_fallback(cls, filename: str = "Contract") -> Dict[str, Any]:
-        """Provides empty audit structure when automated audit reasoning fails or is disabled."""
-        return {
-            "risk_analysis": [],
-            "missing_clauses": [],
-            "suggested_queries": []
-        }
-
+    # Register handlers with FastAPI app
     @classmethod
     def register_app_handlers(cls, app: FastAPI):
-        """Registers global FastAPI exception handlers for centralized error trapping."""
-        
         @app.exception_handler(LexiAuditException)
-        async def custom_exception_handler(request: Request, exc: LexiAuditException):
-            return cls.create_json_response(exc, request)
+        async def domain_handler(req: Request, exc: LexiAuditException):
+            return cls.create_json_response(exc, req)
 
         @app.exception_handler(HTTPException)
-        async def http_exception_handler(request: Request, exc: HTTPException):
-            return cls.create_json_response(exc, request)
+        async def http_handler(req: Request, exc: HTTPException):
+            return cls.create_json_response(exc, req)
 
         @app.exception_handler(RequestValidationError)
-        async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        async def validation_handler(req: Request, exc: RequestValidationError):
             return JSONResponse(
                 status_code=422,
                 content={
@@ -200,5 +126,5 @@ class LexiAuditExceptionHandler:
             )
 
         @app.exception_handler(Exception)
-        async def generic_exception_handler(request: Request, exc: Exception):
-            return cls.create_json_response(exc, request)
+        async def general_handler(req: Request, exc: Exception):
+            return cls.create_json_response(exc, req)

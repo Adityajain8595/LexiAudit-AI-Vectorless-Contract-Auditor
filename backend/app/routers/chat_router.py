@@ -19,188 +19,191 @@ from app.services.redis_cache import invalidate_session_tree
 
 router = APIRouter(prefix="/api/chat", tags=["Chat"])
 
+# Create new chat session
 @router.post("/sessions")
-async def create_session(payload: ChatSessionCreate, current_user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
-    session_data = {"user_id": current_user["id"], 'document_id': payload.document_id, "title": payload.title or "Contract Audit Session"}
-    res = execute_db_query(supabase.table("chat_sessions").insert(session_data))
+async def create_session(payload: ChatSessionCreate, user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
+    data = {"user_id": user["id"], "document_id": payload.document_id, "title": payload.title or "Contract Audit Session"}
+    res = execute_db_query(supabase.table("chat_sessions").insert(data))
     return res.data[0]
 
+# List all user sessions
 @router.get("/sessions-all")
-async def list_all_sessions(current_user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
-    res = execute_db_query(supabase.table("chat_sessions").select("*, documents(id, filename)").eq("user_id", current_user["id"]).order("created_at", desc=True))
+async def list_sessions(user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
+    res = execute_db_query(supabase.table("chat_sessions").select("*, documents(id, filename)").eq("user_id", user["id"]).order("created_at", desc=True))
     return res.data
 
+# List sessions for document
 @router.get("/sessions/{doc_id}")
-async def get_doc_sessions(doc_id: str,  current_user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
-    res = execute_db_query(supabase.table("chat_sessions").select("*").eq('document_id', doc_id).eq("user_id", current_user["id"]).order("created_at", desc=True))
+async def get_sessions(doc_id: str, user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
+    res = execute_db_query(supabase.table("chat_sessions").select("*").eq("document_id", doc_id).eq("user_id", user["id"]).order("created_at", desc=True))
     return res.data
 
+# Update session title
 @router.patch("/sessions/{session_id}")
-async def update_session_title(session_id: str, payload: dict, current_user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
+async def update_session(session_id: str, payload: dict, user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
     new_title = payload.get("title")
     if not new_title:
         raise HTTPException(status_code=400, detail="Title is required")
-    res = execute_db_query(supabase.table("chat_sessions").update({"title": new_title}).eq("id", session_id).eq("user_id", current_user["id"]))
+    res = execute_db_query(supabase.table("chat_sessions").update({"title": new_title}).eq("id", session_id).eq("user_id", user["id"]))
     if not res.data:
         raise HTTPException(status_code=404, detail="Session not found")
     return res.data[0]
 
+# Delete session and messages
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str, current_user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
-    sess_res = execute_db_query(supabase.table("chat_sessions").select("id").eq("id", session_id).eq("user_id", current_user["id"]).single())
-    if not sess_res.data:
+async def delete_session(session_id: str, user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
+    check_res = execute_db_query(supabase.table("chat_sessions").select("id").eq("id", session_id).eq("user_id", user["id"]).single())
+    if not check_res.data:
         raise HTTPException(status_code=404, detail="Session not found")
-    
-    execute_db_query(supabase.table("chat_messages").delete().eq("session_id", session_id))
-    execute_db_query(supabase.table("chat_sessions").delete().eq("id", session_id).eq("user_id", current_user["id"]))
 
-    # Invalidate session-scoped cache in Redis Cloud
+    execute_db_query(supabase.table("chat_messages").delete().eq("session_id", session_id))
+    execute_db_query(supabase.table("chat_sessions").delete().eq("id", session_id).eq("user_id", user["id"]))
+
     try:
-        await invalidate_session_tree(user_id=current_user["id"], session_id=session_id)
-    except Exception as e:
-        print(f"[RedisCache] Session cache cleanup notice: {e}")
+        await invalidate_session_tree(user_id=user["id"], session_id=session_id)
+    except Exception:
+        pass
 
     return {"status": "success", "message": "Session deleted successfully"}
 
+# Retrieve messages for session
 @router.get("/messages/{session_id}")
-async def get_session_messages(session_id: str, current_user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
-    sess_res = execute_db_query(supabase.table("chat_sessions").select("id").eq("id", session_id).eq("user_id", current_user["id"]).single())
-    if not sess_res.data:
+async def get_messages(session_id: str, user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
+    check_res = execute_db_query(supabase.table("chat_sessions").select("id").eq("id", session_id).eq("user_id", user["id"]).single())
+    if not check_res.data:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    res = execute_db_query(supabase.table("chat_messages").select("*").eq('session_id', session_id).order("created_at", desc=False))
+    res = execute_db_query(supabase.table("chat_messages").select("*").eq("session_id", session_id).order("created_at", desc=False))
     return res.data
 
+# Contract query execution endpoint
 @router.post("/query")
-async def query_contract_rag(payload: QueryRequest, current_user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
-    # Safety check
-    guard_result = await check_guardrails(payload.query)
-    if not guard_result["is_safe"]:
-        reason = guard_result.get("reason", "Query blocked by safety policy.")
+async def query_contract_rag(payload: QueryRequest, user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
+    # Safety guardrails query evaluation
+    guard_res = await check_guardrails(payload.query)
+    if not guard_res["is_safe"]:
+        reason = guard_res.get("reason", "Query blocked by safety policy.")
         return {
             "answer": f"**Safety Notice:** {reason}",
             "cited_nodes": [],
-            "suggested_queries": ["What are the core obligations of each party?", "What is the governing law of this agreement?", "What is the liability limitation?"]
+            "suggested_queries": ["What are the core obligations?", "What is governing law?", "What is liability limit?"]
         }
 
-    # Fetch document tree & history
+    # Fetch document tree and history
     def fetch_session():
-        return execute_db_query(supabase.table("chat_sessions").select("*, documents(id, filename, tree_index)").eq("id", payload.session_id).eq("user_id", current_user["id"]).single())
+        return execute_db_query(supabase.table("chat_sessions").select("*, documents(id, filename, tree_index)").eq("id", payload.session_id).eq("user_id", user["id"]).single())
 
     def fetch_history():
         return execute_db_query(supabase.table("chat_messages").select("sender, content").eq("session_id", payload.session_id).order("created_at", desc=True).limit(6))
 
-    session_res, prior_messages_res = await asyncio.gather(
+    sess_res, hist_res = await asyncio.gather(
         asyncio.to_thread(fetch_session),
         asyncio.to_thread(fetch_history)
     )
 
-    if not session_res.data:
+    if not sess_res.data:
         raise ResourceNotFoundException("ChatSession", payload.session_id)
 
-    doc_data = session_res.data["documents"]
+    doc_data = sess_res.data["documents"]
     doc_id = doc_data.get("id")
-    prior_messages = list(reversed(prior_messages_res.data or []))
+    prior_msgs = list(reversed(hist_res.data or []))
     doc_tree = doc_data.get("tree_index") or []
 
-    # Sanitize user query
-    sanitized_query, _ = redact_pii(payload.query)
+    clean_query, _ = redact_pii(payload.query)
 
-    # Persist user question asynchronously in background
-    def save_user_msg():
+    # Persist user message asynchronously
+    def save_user():
         try:
             execute_db_query(supabase.table("chat_messages").insert({
                 "session_id": payload.session_id,
                 "sender": "user",
-                "content": sanitized_query
+                "content": clean_query
             }))
-        except Exception as e:
-            print(f"Error saving user message: {e}")
+        except Exception:
+            pass
 
-    asyncio.create_task(asyncio.to_thread(save_user_msg))
+    asyncio.create_task(asyncio.to_thread(save_user))
 
-    # Initialize Langfuse root trace 
+    # Initialize Langfuse telemetry trace
     trace = start_trace(
         name="vectorless_rag_query",
         session_id=payload.session_id,
-        user_id=current_user["id"],
+        user_id=user["id"],
         metadata={"document_id": doc_id, "doc_title": doc_data.get("filename")}
     )
 
-    # Run single-pass RAG pipeline with trace observation
-    result = await run_rag_direct(query=sanitized_query, tree=doc_tree, chat_history=prior_messages, trace=trace)
+    # Execute vectorless RAG search
+    res = await run_rag_direct(query=clean_query, tree=doc_tree, chat_history=prior_msgs, trace=trace)
 
     trace_id = getattr(trace, "trace_id", getattr(trace, "id", None))
     if trace_id:
-        result["trace_id"] = trace_id
+        res["trace_id"] = trace_id
 
-    # Persist assistant message asynchronously
-    def save_assistant_msg():
+    # Persist assistant response asynchronously
+    def save_assistant():
         try:
             execute_db_query(supabase.table("chat_messages").insert({
                 "session_id": payload.session_id,
                 "sender": "assistant",
-                "content": result.get("answer", ""),
-                "cited_nodes": result.get("cited_nodes", [])
+                "content": res.get("answer", ""),
+                "cited_nodes": res.get("cited_nodes", [])
             }))
-        except Exception as db_err:
-            print(f"Error persisting assistant message: {db_err}")
+        except Exception:
+            pass
 
-    asyncio.create_task(asyncio.to_thread(save_assistant_msg))
+    asyncio.create_task(asyncio.to_thread(save_assistant))
 
-    # Close the root trace cleanly
     if hasattr(trace, "end"):
-        trace.end(output={"answer": result.get("answer", "")[:500], "cited_nodes_count": len(result.get("cited_nodes", []))})
+        trace.end(output={"answer": res.get("answer", "")[:500], "nodes": len(res.get("cited_nodes", []))})
 
-    # Asynchronously evaluate turn quality and log LLM judge scores to Langfuse trace & session
+    # Background automated LLM evaluation
     async def run_turn_eval():
         try:
             from app.services.eval_service import evaluate_rag_turn
             await evaluate_rag_turn(
-                query=sanitized_query,
-                retrieved_nodes=result.get("cited_nodes", []),
+                query=clean_query,
+                retrieved_nodes=res.get("cited_nodes", []),
                 tree=doc_tree,
-                generated_answer=result.get("answer", ""),
+                generated_answer=res.get("answer", ""),
                 trace_id=trace_id,
                 session_id=payload.session_id
             )
             flush_telemetry()
-        except Exception as eval_err:
-            print(f"Background turn evaluation note: {eval_err}")
+        except Exception:
+            pass
 
     asyncio.create_task(run_turn_eval())
-    
-    # Flush telemetry events to Langfuse
     flush_telemetry()
 
-    return result
+    return res
 
+# Export audit dialogue report
 @router.get("/export/{session_id}")
-async def export_session_pdf(session_id: str, current_user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
-    session_res = supabase.table("chat_sessions").select("*, documents(filename, risk_analysis, missing_clauses)").eq("id", session_id).eq("user_id", current_user["id"]).single().execute()
-    if not session_res.data:
+async def export_session_pdf(session_id: str, user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
+    sess_res = supabase.table("chat_sessions").select("*, documents(filename, risk_analysis, missing_clauses)").eq("id", session_id).eq("user_id", user["id"]).single().execute()
+    if not sess_res.data:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    doc_info = session_res.data.get("documents") or {}
-    messages_res = supabase.table("chat_messages").select("*").eq("session_id", session_id).order("created_at", desc=False).execute()
-    
+    doc_info = sess_res.data.get("documents") or {}
+    msg_res = supabase.table("chat_messages").select("*").eq("session_id", session_id).order("created_at", desc=False).execute()
+
     class MessageObj:
         def __init__(self, d):
             self.sender = d["sender"]
             self.content = d["content"]
             self.cited_nodes = d.get("cited_nodes") or []
 
-    msg_objects = [MessageObj(m) for m in (messages_res.data or [])]
-    pdf_buffer = generate_session_pdf(
-        session_title=session_res.data["title"],
+    msg_objs = [MessageObj(m) for m in (msg_res.data or [])]
+    pdf_buf = generate_session_pdf(
+        session_title=sess_res.data["title"],
         doc_name=doc_info.get("filename", "Contract Document"),
-        messages=msg_objects,
+        messages=msg_objs,
         risk_analysis=doc_info.get("risk_analysis", []),
         missing_clauses=doc_info.get("missing_clauses", [])
     )
 
     return StreamingResponse(
-        pdf_buffer,
+        pdf_buf,
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=Audit_Report_{session_id[:8]}.pdf"}
     )

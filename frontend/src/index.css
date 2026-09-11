@@ -47,12 +47,17 @@
   --color-amber-500: #F59E0B;
   --color-amber-600: #D97706;
 
-  /* ── Backward-compatible Teal token aliases mapped to Peach ── */
-  --color-teal-300: #FFD6C0;
-  --color-teal-400: #FFB394;
-  --color-teal-500: #F27A52;
-  --color-teal-600: #D95D34;
-  --color-teal-700: #B8431C;
+  /* ── Complementary Cool Accents (Cyan & Petrol Teal) ── */
+  --color-cyan-300: #67E8F9;
+  --color-cyan-400: #22D3EE;
+  --color-cyan-500: #06B6D4;
+  --color-cyan-600: #0891B2;
+  --color-petrol-300: #5EEAD4;
+  --color-petrol-400: #2DD4BF;
+  --color-petrol-500: #14B8A6;
+  --color-petrol-600: #0D9488;
+  --color-azure-400: #38BDF8;
+  --color-azure-500: #0284C7;
 
   /* ── Warm Amber / Brass Accent ───────────────── */
   --color-amber-300: #FDE68A;
@@ -137,9 +142,15 @@ body {
 }
 
 .glass-teal {
-  background: rgba(242, 122, 82, 0.1);
+  background: rgba(20, 184, 166, 0.08);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 179, 148, 0.25);
+  border: 1px solid rgba(45, 212, 191, 0.22);
+}
+
+.glass-cyan {
+  background: rgba(6, 182, 212, 0.08);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(34, 211, 238, 0.22);
 }
 
 /* ── Glow border utility ───────────────────────────────────────── */
@@ -147,6 +158,12 @@ body {
   border: 1px solid rgba(242, 122, 82, 0.38);
   box-shadow: 0 0 0 1px rgba(242, 122, 82, 0.12) inset,
               0 0 24px -4px rgba(242, 122, 82, 0.25);
+}
+
+.glow-cyan {
+  border: 1px solid rgba(6, 182, 212, 0.38);
+  box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.12) inset,
+              0 0 24px -4px rgba(6, 182, 212, 0.25);
 }
 
 .glow-subtle {
@@ -161,8 +178,15 @@ body {
   background-clip: text;
 }
 
+.gradient-text-cyan {
+  background: linear-gradient(135deg, #FFFDF9 0%, #A5F3FC 35%, #06B6D4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
 .gradient-text-teal {
-  background: linear-gradient(135deg, #FFFDF9 0%, #FFD6C0 35%, #F27A52 100%);
+  background: linear-gradient(135deg, #FFFDF9 0%, #99F6E4 35%, #14B8A6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -312,3 +336,51 @@ body {
   border-radius: 0 8px 8px 0;
   font-style: normal;
 }
+
+/* ── Continuous Marquee Sliders ────────────────────────────────── */
+@keyframes marquee-rtl {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes marquee-ltr {
+  0% {
+    transform: translateX(-50%);
+  }
+  100% {
+    transform: translateX(0%);
+  }
+}
+
+.animate-marquee-rtl {
+  display: flex;
+  width: max-content;
+  animation: marquee-rtl 75s linear infinite;
+  will-change: transform;
+}
+
+.animate-marquee-ltr {
+  display: flex;
+  width: max-content;
+  animation: marquee-ltr 32s linear infinite;
+  will-change: transform;
+}
+
+.animate-marquee-ltr-slow {
+  display: flex;
+  width: max-content;
+  animation: marquee-ltr 42s linear infinite;
+  will-change: transform;
+}
+
+.marquee-container:hover .animate-marquee-rtl,
+.marquee-container:hover .animate-marquee-ltr,
+.marquee-container:hover .animate-marquee-ltr-slow {
+  animation-play-state: paused;
+}
+
+

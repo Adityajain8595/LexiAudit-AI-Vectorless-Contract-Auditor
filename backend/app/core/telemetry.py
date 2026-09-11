@@ -3,8 +3,8 @@ from typing import Optional, Dict, Any, List
 from .config import settings
 from langfuse import Langfuse
 
+# Offline fallback span implementation
 class NullSpan:
-    """Mock span for zero-overhead local development or offline fallback."""
     def __init__(self, name: str = ""):
         self.name = name
     def end(self, *args, **kwargs):
@@ -19,14 +19,13 @@ class NullSpan:
         pass
 
 class NullTrace(NullSpan):
-    """Mock trace."""
     id = "mock-trace-id"
     trace_id = "mock-trace-id"
     def score(self, *args, **kwargs):
         pass
 
+# Universal adapter for Langfuse spans
 class SpanWrapper:
-    """Universal adapter for Langfuse spans and observations across SDK versions."""
     def __init__(self, raw_span: Any, name: str = "", context_manager: Any = None, is_trace: bool = False):
         self._raw = raw_span
         self.name = name
@@ -78,13 +77,13 @@ class SpanWrapper:
                 return
             except Exception:
                 pass
-        _telemetry_manager.submit_score(self.trace_id, value, comment=comment, name=name)
+        _manager.submit_score(self.trace_id, value, comment=comment, name=name)
 
     def span(self, name: str, input: Optional[Any] = None, metadata: Optional[Dict[str, Any]] = None, **kwargs):
-        return _telemetry_manager.create_span(self._raw, name, input_data=input, metadata=metadata)
+        return _manager.create_span(self._raw, name, input_data=input, metadata=metadata)
 
     def generation(self, name: str, model: str = "", input: Any = None, output: Any = None, **kwargs):
-        return _telemetry_manager.log_generation_event(self._raw, name, model=model, prompt=input, completion=output, **kwargs)
+        return _manager.log_generation_event(self._raw, name, model=model, prompt=input, completion=output, **kwargs)
 
     def start_observation(self, *args, **kwargs):
         if hasattr(self._raw, "start_observation"):
@@ -94,10 +93,8 @@ class SpanWrapper:
                 pass
         return NullSpan()
 
+# Langfuse tracing lifecycle manager
 class TelemetryManager:
-    """
-    Enterprise Observability & Tracing Manager for Langfuse.
-    """
     def __init__(self):
         self._client = None
         self._initialized = False
@@ -111,12 +108,12 @@ class TelemetryManager:
                         secret_key=settings.LANGFUSE_SECRET_KEY,
                         host=settings.langfuse_server_url
                     )
-                except Exception as e:
-                    print(f"Langfuse init note: {e}")
+                except Exception:
                     self._client = None
             self._initialized = True
         return self._client
 
+    # Initialize root trace with metadata
     def create_trace(
         self,
         name: str,
@@ -130,10 +127,7 @@ class TelemetryManager:
             return NullTrace(name)
         try:
             trace_tags = tags or ["production", "legal-contract-auditor"]
-            meta = {
-                **(metadata or {}),
-                "tags": trace_tags
-            }
+            meta = {**(metadata or {}), "tags": trace_tags}
             if session_id:
                 meta["session_id"] = session_id
             if user_id:
@@ -149,8 +143,6 @@ class TelemetryManager:
                 )
                 return SpanWrapper(trace_obj, name, is_trace=True)
             elif hasattr(client, "start_observation"):
-                # In Langfuse SDK v4, propagate_attributes sets first-class user_id,
-                # session_id, trace_name, and tags on the OpenTelemetry trace context
                 cm = None
                 try:
                     import langfuse
@@ -163,19 +155,16 @@ class TelemetryManager:
                             metadata=meta
                         )
                         cm.__enter__()
-                except Exception as ctx_err:
-                    print(f"Context propagation note: {ctx_err}")
+                except Exception:
+                    pass
 
-                obs = client.start_observation(
-                    name=name,
-                    as_type="chain",
-                    metadata=meta
-                )
+                obs = client.start_observation(name=name, as_type="chain", metadata=meta)
                 return SpanWrapper(obs, name, context_manager=cm, is_trace=True)
-        except Exception as e:
-            print(f"Langfuse trace creation note: {e}")
+        except Exception:
+            pass
         return NullTrace(name)
 
+    # Create intermediate execution span
     def create_span(
         self,
         trace_or_parent,
@@ -202,10 +191,11 @@ class TelemetryManager:
                     metadata=metadata or {},
                     start_time=time.time()
                 )
-        except Exception as e:
-            print(f"Langfuse create_span error: {e}")
+        except Exception:
+            pass
         return NullSpan(name)
 
+    # Log LLM generation event
     def log_generation_event(
         self,
         trace_or_parent,
@@ -245,10 +235,11 @@ class TelemetryManager:
                     model_parameters=model_parameters or {},
                     metadata=metadata or {}
                 )
-        except Exception as e:
-            print(f"Langfuse generation error: {e}")
+        except Exception:
+            pass
         return NullSpan(name)
 
+    # Submit evaluation score to Langfuse
     def submit_score(
         self,
         trace_id: Optional[str],
@@ -270,7 +261,6 @@ class TelemetryManager:
                     "value": score,
                     "comment": comment
                 }
-                # Langfuse API accepts either trace_id OR session_id (not both simultaneously)
                 if valid_trace_id:
                     kwargs["trace_id"] = valid_trace_id
                 elif session_id:
@@ -283,8 +273,8 @@ class TelemetryManager:
                     value=score,
                     comment=comment
                 )
-        except Exception as e:
-            print(f"Error logging eval score to Langfuse: {e}")
+        except Exception:
+            pass
 
     def flush(self):
         client = self.get_client()
@@ -294,48 +284,48 @@ class TelemetryManager:
             except Exception:
                 pass
 
-_telemetry_manager = TelemetryManager()
+_manager = TelemetryManager()
 
 def get_langfuse():
-    return _telemetry_manager.get_client()
+    return _manager.get_client()
 
 def start_trace(name: str, session_id: Optional[str] = None, user_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None, tags: Optional[List[str]] = None):
-    return _telemetry_manager.create_trace(name, session_id, user_id, metadata, tags)
+    return _manager.create_trace(name, session_id, user_id, metadata, tags)
 
 def start_span(trace_or_parent, name: str, input_data: Optional[Any] = None, metadata: Optional[Dict[str, Any]] = None):
-    return _telemetry_manager.create_span(trace_or_parent, name, input_data, metadata)
+    return _manager.create_span(trace_or_parent, name, input_data, metadata)
 
 def log_generation(trace_or_parent, name: str, model: str, prompt: Any, completion: Any, usage: Optional[Dict[str, int]] = None, model_parameters: Optional[Dict[str, Any]] = None, metadata: Optional[Dict[str, Any]] = None):
-    return _telemetry_manager.log_generation_event(trace_or_parent, name, model, prompt, completion, usage, model_parameters, metadata)
+    return _manager.log_generation_event(trace_or_parent, name, model, prompt, completion, usage, model_parameters, metadata)
 
 def log_eval_score(trace_id: Optional[str], score: float, comment: Optional[str] = None, name: str = "eval_score", session_id: Optional[str] = None):
-    return _telemetry_manager.submit_score(trace_id, score, comment, name, session_id=session_id)
+    return _manager.submit_score(trace_id, score, comment, name, session_id=session_id)
 
 REQUIRED_PROMPT_KEYS = {
     "audit_human_template": ["risk_analysis", "remedy_recommendation", "missing_clauses", "suggested_language"],
     "audit_system_prompt": ["clause_name", "remedy_recommendation"]
 }
 
+# Resolve registered prompt template
 def get_prompt_template(prompt_name: str, fallback_template: str) -> str:
-    client = _telemetry_manager.get_client()
+    client = _manager.get_client()
     if not client:
         return fallback_template
     try:
         prompt_obj = client.get_prompt(prompt_name)
         if prompt_obj and prompt_obj.prompt:
             remote_prompt = prompt_obj.prompt
-            required_keys = REQUIRED_PROMPT_KEYS.get(prompt_name, [])
-            if any(k not in remote_prompt for k in required_keys):
-                # Remote prompt in Langfuse is an outdated version missing critical schema fields
+            required = REQUIRED_PROMPT_KEYS.get(prompt_name, [])
+            if any(k not in remote_prompt for k in required):
                 return fallback_template
             return remote_prompt
     except Exception:
         pass
     return fallback_template
 
+# Sync prompt template to Langfuse
 def sync_prompt_to_langfuse(prompt_name: str, prompt_content: str) -> bool:
-    """Updates or publishes a prompt template to Langfuse Cloud under production label."""
-    client = _telemetry_manager.get_client()
+    client = _manager.get_client()
     if not client:
         return False
     try:
@@ -345,10 +335,8 @@ def sync_prompt_to_langfuse(prompt_name: str, prompt_content: str) -> bool:
             labels=["latest", "production"]
         )
         return True
-    except Exception as e:
-        print(f"Failed to sync prompt {prompt_name} to Langfuse: {e}")
+    except Exception:
         return False
 
 def flush_telemetry():
-    _telemetry_manager.flush()
-
+    _manager.flush()

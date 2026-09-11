@@ -3,10 +3,8 @@ from typing import Tuple, List, Dict, Any, Optional
 from pageindex import PageIndexClient
 from app.core import settings
 
+# PageIndex tree parser client
 class PageIndexParser:
-    """
-    PageIndex client wrapper for tree-structured document parsing.
-    """
     def __init__(self):
         self._client: Optional[PageIndexClient] = None
 
@@ -17,36 +15,33 @@ class PageIndexParser:
             self._client = PageIndexClient(api_key=settings.PAGEINDEX_API_KEY)
         return self._client
 
-    async def parse_document(self, file_path: str) -> Tuple[str, List[Dict[str, Any]]]:
+    # Submit PDF document for parsing
+    async def parse_document(self, path: str) -> Tuple[str, List[Dict[str, Any]]]:
         client = self.get_client()
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, client.submit_document, file_path)
-        doc_id = result["doc_id"]
+        res = await loop.run_in_executor(None, client.submit_document, path)
+        doc_id = res["doc_id"]
 
+        # Poll parsing status until completion
         while True:
-            status_data = await loop.run_in_executor(None, client.get_document, doc_id)
-            status = status_data.get("status")
+            info = await loop.run_in_executor(None, client.get_document, doc_id)
+            status = info.get("status")
             if status == "completed":
                 break
             elif status == "failed":
-                raise RuntimeError("PageIndex failed to build document tree structure.")
+                raise RuntimeError("Document parsing failed in PageIndex.")
             await asyncio.sleep(2)
 
+        # Fetch parsed tree hierarchy
         try:
-            tree_result = await loop.run_in_executor(
-                None,
-                lambda: client.get_tree(doc_id, node_summary=True, include_text=True)
-            )
+            tree_data = await loop.run_in_executor(None, lambda: client.get_tree(doc_id, node_summary=True, include_text=True))
         except Exception:
-            tree_result = await loop.run_in_executor(
-                None,
-                lambda: client.get_tree(doc_id, node_summary=True)
-            )
+            tree_data = await loop.run_in_executor(None, lambda: client.get_tree(doc_id, node_summary=True))
 
-        tree_nodes = tree_result.get("result", [])
-        return doc_id, tree_nodes
+        nodes = tree_data.get("result", [])
+        return doc_id, nodes
 
-_pageindex_parser = PageIndexParser()
+_parser = PageIndexParser()
 
 async def process_pdf(file_path: str) -> Tuple[str, List[Dict[str, Any]]]:
-    return await _pageindex_parser.parse_document(file_path)
+    return await _parser.parse_document(file_path)
