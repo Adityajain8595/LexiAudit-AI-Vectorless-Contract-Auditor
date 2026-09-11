@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     TREE_CACHE_ENABLED: bool = Field(default=True)
     CACHE_TTL_SECONDS: int = Field(default=604800)
     CACHE_SECRET_KEY: Optional[str] = Field(default=None)
+    REDIS_AES_SECRET_KEY: Optional[str] = Field(default=None)
 
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 

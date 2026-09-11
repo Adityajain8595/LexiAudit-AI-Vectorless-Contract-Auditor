@@ -22,6 +22,7 @@ class ContractTreeCacheService:
     def _get_encryption_key(self) -> bytes:
         secret = (
             settings.CACHE_SECRET_KEY
+            or settings.REDIS_AES_SECRET_KEY
             or settings.SUPABASE_SECRET_KEY
             or "lexiaudit-secure-contract-tree-cache-key-default"
         )
