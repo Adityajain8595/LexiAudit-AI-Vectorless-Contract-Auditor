@@ -10,84 +10,77 @@ import {
   FileSearch,
   Lock,
   GitBranch,
-  CheckCircle2
+  CheckCircle2,
+  Cpu,
+  Database,
+  Server
 } from 'lucide-react';
 import HeroScene from '../components/landing/HeroScene';
 
-// Platform technology specifications
+// Platform technology specifications (core 7 engines)
 const TECH_STACK = [
   {
     id: 'groq',
     name: 'Groq LPU™ Silicon',
-    role: 'Sub-Second LLM Execution',
-    accent: 'amber',
+    role: 'Sub-second legal reasoning, query rewriting, and structured Pydantic schema coercion on dedicated LPU silicon.',
+    icon: Cpu,
   },
   {
     id: 'pageindex',
     name: 'PageIndex AST',
-    role: 'Vectorless Document Tree',
-    accent: 'cyan',
+    role: 'Hierarchical document tree parsing that eliminates vector embeddings and preserves exact clause boundaries.',
+    icon: GitBranch,
   },
   {
     id: 'redis',
     name: 'Upstash Redis',
-    role: 'In-Memory Encrypted Cache',
-    accent: 'cyan',
+    role: 'Pre-warmed low-latency caching with encrypted tree persistence and multi-tenant key isolation.',
+    icon: Database,
   },
   {
     id: 'langfuse',
     name: 'Langfuse Cloud',
-    role: 'Distributed Observability & Evals',
-    accent: 'amber',
+    role: 'Distributed OpenTelemetry tracing, prompt versioning, and automated 4-metric LLM-as-a-judge scoring.',
+    icon: Activity,
   },
   {
     id: 'supabase',
     name: 'Supabase Cloud',
-    role: 'Relational ACID & Private S3',
-    accent: 'cyan',
+    role: 'Transactional PostgreSQL persistence, strict row-level security (RLS), and private contract object storage.',
+    icon: Server,
   },
   {
     id: 'pdfjs',
     name: 'Mozilla PDF.js',
-    role: 'Word-Boundary Viewport Sync',
-    accent: 'amber',
+    role: 'Client-side vector canvas engine synchronizing AST citations directly to verbatim PDF bounding boxes.',
+    icon: FileSearch,
   },
   {
     id: 'fastapi',
     name: 'FastAPI Async',
-    role: 'High-Throughput Coroutines',
-    accent: 'cyan',
-  },
-  {
-    id: 'security',
-    name: 'AES-256-GCM Vault',
-    role: 'Client-Side PII Sanitizer',
-    accent: 'amber',
+    role: 'High-throughput asynchronous API runtime handling non-blocking coroutines and streaming SSE responses.',
+    icon: Zap,
   },
 ];
 
-// Single small tech chip card component with only name and role
+// Tabular tech card component uniformly styled in blue
 function TechChipCard({ tech }: { tech: typeof TECH_STACK[0] }) {
-  const isCyan = tech.accent === 'cyan';
+  const Icon = tech.icon;
 
   return (
-    <div
-      className={`shrink-0 px-5 py-3 rounded-2xl border backdrop-blur-xl transition-all duration-300 shadow-md flex flex-col justify-center gap-1 select-none ${
-        isCyan
-          ? 'bg-[#0A1114]/90 border-[#06B6D4]/25 hover:border-[#22D3EE]/60'
-          : 'bg-[#140E0A]/90 border-[#F27A52]/25 hover:border-[#FFAF8E]/60'
-      }`}
-    >
-      <span className="text-sm font-bold text-[#FFFDF9] whitespace-nowrap">
-        {tech.name}
-      </span>
-      <span
-        className={`text-xs font-medium whitespace-nowrap ${
-          isCyan ? 'text-[#22D3EE]' : 'text-[#FFAF8E]'
-        }`}
-      >
+    <div className="w-[230px] sm:w-[250px] shrink-0 p-4 rounded-2xl border border-[#0284C7]/30 bg-[#07131D]/90 hover:bg-[#0A1A27] hover:border-[#38BDF8]/65 backdrop-blur-xl transition-all duration-300 shadow-md hover:shadow-lg hover:shadow-[#0284C7]/20 flex flex-col justify-between gap-3 select-none">
+      <div className="flex items-center gap-2.5">
+        <div className="p-1.5 rounded-xl border border-[#38BDF8]/35 bg-[#0284C7]/15 text-[#38BDF8] shrink-0">
+          <Icon size={16} />
+        </div>
+        <h4 className="text-sm font-bold text-[#FFFDF9] truncate">
+          {tech.name}
+        </h4>
+      </div>
+
+      <p className="text-xs text-[#93C5FD]/85 leading-relaxed font-sans">
         {tech.role}
-      </span>
+      </p>
     </div>
   );
 }
@@ -170,18 +163,6 @@ export default function Landing() {
           </div>
 
           <div className="flex items-center gap-3">
-            <a
-              href="#tech-matrix"
-              className="hidden sm:inline-flex text-xs font-mono text-[#C7A78E] hover:text-[#22D3EE] transition-colors mr-2"
-            >
-              Technology Stack
-            </a>
-            <a
-              href="#capabilities"
-              className="hidden sm:inline-flex text-xs font-mono text-[#C7A78E] hover:text-[#22D3EE] transition-colors mr-3"
-            >
-              Capabilities
-            </a>
             <Link
               to="/auth"
               className="text-xs sm:text-sm font-bold bg-gradient-to-r from-[#F27A52] to-[#D95D34] hover:from-[#FFAF8E] hover:to-[#F27A52] text-[#080504] px-4 sm:px-5 py-2 rounded-xl transition-all shadow-md shadow-[#330F04]/60 flex items-center gap-1.5 cursor-pointer hover:scale-105"
