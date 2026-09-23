@@ -2,36 +2,19 @@ import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
 import {
-  Upload, ShieldCheck, Scale, Search, Stamp,
-  ArrowRight, CheckCircle2, AlertTriangle, FileSearch
+  Upload, ShieldCheck, Scale,
+  ArrowRight, FileSearch
 } from 'lucide-react';
-import useWorkspaceStore, { type Document } from '../../store/workspaceStore';
+import useWorkspaceStore from '../../store/workspaceStore';
 import useAuthStore from '../../store/authStore';
-import { uploadDocument, createSession } from '../../api/client';
-
-const PROCESSING_STAGES = [
-  { label: 'Ingesting contract PDF to isolated storage…', icon: Upload },
-  { label: 'Parsing hierarchical section tree structure…', icon: Search },
-  { label: 'Auditing liability risks & missing protections…', icon: Scale },
-  { label: 'Synthesizing tree citations & preparing RAG workspace…', icon: Stamp },
-];
+import UploadModal from './UploadModal';
 
 export default function RagWelcomeScreen() {
-  const {
-    addDocument,
-    setSelectedDoc,
-    addSession,
-    setSelectedSessionId,
-    setMessages,
-    setCurrentView,
-    isBackendOnline
-  } = useWorkspaceStore();
+  const { isBackendOnline } = useWorkspaceStore();
   const { user } = useAuthStore();
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadStatus, setUploadStatus] = useState<'idle' | 'processing' | 'done' | 'error'>('idle');
-  const [stageIndex, setStageIndex] = useState(0);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [droppedFile, setDroppedFile] = useState<File | null>(null);
 
   // Extract user first name / display name cleanly
   const rawName =
@@ -44,7 +27,8 @@ export default function RagWelcomeScreen() {
   // Direct drop handler
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles[0]) {
-      handleDirectUpload(acceptedFiles[0]);
+      setDroppedFile(acceptedFiles[0]);
+      setIsUploadOpen(true);
     }
   }, []);
 
@@ -53,70 +37,7 @@ export default function RagWelcomeScreen() {
     accept: { 'application/pdf': ['.pdf'] },
     maxFiles: 1,
     disabled: !isBackendOnline,
-    noClick: !isBackendOnline
   });
-
-  const handleDirectUpload = async (file: File) => {
-    if (!isBackendOnline) {
-      setErrorMessage('Backend engine is currently connecting/spinning up. Please wait a moment for connection.');
-      return;
-    }
-
-    setSelectedFile(file);
-    setUploadStatus('processing');
-    setStageIndex(0);
-    setErrorMessage('');
-
-    const interval = setInterval(() => {
-      setStageIndex((idx) => Math.min(idx + 1, PROCESSING_STAGES.length - 1));
-    }, 2400);
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const res = await uploadDocument(formData);
-      clearInterval(interval);
-      setStageIndex(PROCESSING_STAGES.length - 1);
-
-      const doc = res.data;
-      const newDoc: Document = {
-        id: doc.doc_id,
-        filename: doc.filename,
-        created_at: new Date().toISOString(),
-        risk_analysis: doc.risk_analysis || [],
-        missing_clauses: doc.missing_clauses || [],
-        suggested_queries: doc.suggested_queries || [],
-        tree_index: doc.tree_index || [],
-      };
-
-      addDocument(newDoc);
-      setSelectedDoc(newDoc);
-
-      // Auto-create initial session and switch directly into chat
-      try {
-        const baseName = doc.filename.replace(/\.pdf$/i, '').slice(0, 20);
-        const sessRes = await createSession(doc.doc_id, `Audit – ${baseName}`);
-        addSession(sessRes.data);
-        setSelectedSessionId(sessRes.data.id);
-        setMessages([]);
-      } catch (sessErr) {
-        console.error('Session create error:', sessErr);
-      }
-
-      setUploadStatus('done');
-      setTimeout(() => {
-        setCurrentView('chat');
-      }, 600);
-    } catch (err: any) {
-      clearInterval(interval);
-      console.error('Direct upload failed:', err);
-      setErrorMessage(err.message || 'Audit failed. Please verify that your document is a valid PDF.');
-      setUploadStatus('error');
-    }
-  };
-
-  const CurrentProcessingIcon = PROCESSING_STAGES[stageIndex]?.icon || Scale;
 
   return (
     <div className="flex-1 h-full w-full bg-[#080504] text-slate-100 flex flex-col justify-center items-center px-6 py-6 overflow-hidden relative select-none">
@@ -166,6 +87,10 @@ export default function RagWelcomeScreen() {
         >
           <div
             {...getRootProps()}
+            onClick={() => {
+              setDroppedFile(null);
+              setIsUploadOpen(true);
+            }}
             className={`w-full py-8 px-8 rounded-3xl border-2 border-dashed transition-all duration-200 flex flex-col items-center justify-center text-center cursor-pointer relative overflow-hidden group shadow-2xl ${
               isDragActive
                 ? 'border-[#FFAF8E] bg-[#F27A52]/15 shadow-[#330F04] scale-[1.01]'
@@ -264,94 +189,18 @@ export default function RagWelcomeScreen() {
         </motion.div>
       </div>
 
-      {/* ── Processing Overlay Modal (when drag-and-drop occurs on welcome screen) ── */}
+      {/* ── Unified Document Upload & Audit Modal ── */}
       <AnimatePresence>
-        {uploadStatus === 'processing' && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-xl"
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 15 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-md p-7 rounded-3xl bg-[#120D0A] border border-peach-500/30 shadow-2xl shadow-peach-950/90 text-center flex flex-col items-center"
-            >
-              <div className="relative w-14 h-14 mb-4">
-                <div className="absolute inset-0 rounded-2xl bg-peach-500/20 animate-ping" />
-                <div className="relative w-full h-full rounded-2xl bg-peach-500/20 border border-peach-500/40 flex items-center justify-center text-peach-300">
-                  <CurrentProcessingIcon size={24} className="animate-pulse" />
-                </div>
-              </div>
-
-              <h3 className="text-base font-bold text-slate-100 mb-1">
-                Auditing {selectedFile?.name || 'Contract PDF'}
-              </h3>
-              <p className="text-xs text-slate-400 mb-5">
-                Executing autonomous hierarchical legal audit…
-              </p>
-
-              {/* Progress Steps */}
-              <div className="w-full flex flex-col gap-2 text-left">
-                {PROCESSING_STAGES.map((s, idx) => {
-                  const isDone = idx < stageIndex;
-                  const isCurrent = idx === stageIndex;
-                  return (
-                    <div
-                      key={idx}
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all ${
-                        isCurrent
-                          ? 'bg-peach-500/15 border border-peach-500/30 text-peach-200'
-                          : isDone
-                          ? 'text-slate-400'
-                          : 'text-slate-600'
-                      }`}
-                    >
-                      {isDone ? (
-                        <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                      ) : isCurrent ? (
-                        <div className="w-3.5 h-3.5 rounded-full border-2 border-peach-400 border-t-transparent animate-spin shrink-0" />
-                      ) : (
-                        <div className="w-3.5 h-3.5 rounded-full border border-slate-700 shrink-0" />
-                      )}
-                      <span className="truncate">{s.label}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </motion.div>
-          </motion.div>
+        {isUploadOpen && (
+          <UploadModal
+            initialFile={droppedFile}
+            onClose={() => {
+              setIsUploadOpen(false);
+              setDroppedFile(null);
+            }}
+          />
         )}
       </AnimatePresence>
-
-      {/* Error notification banner if upload failed */}
-      {uploadStatus === 'error' && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-md p-4 rounded-2xl bg-red-950/90 border border-red-500/30 text-red-200 shadow-2xl flex items-start gap-3">
-          <AlertTriangle size={18} className="text-red-400 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-xs font-bold">Upload Failed</p>
-            <p className="text-[11px] text-red-300 mt-0.5">{errorMessage}</p>
-          </div>
-          <div className="flex items-center gap-2 ml-2">
-            {selectedFile && (
-              <button
-                onClick={() => handleDirectUpload(selectedFile)}
-                className="px-2.5 py-1 bg-[#F27A52] hover:bg-[#D95D34] text-white text-[11px] font-bold rounded-lg transition-colors cursor-pointer"
-              >
-                Retry
-              </button>
-            )}
-            <button
-              onClick={() => setUploadStatus('idle')}
-              className="text-xs text-red-400 hover:text-red-200 cursor-pointer font-bold px-1"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

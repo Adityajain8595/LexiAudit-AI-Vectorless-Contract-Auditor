@@ -22,9 +22,30 @@ router = APIRouter(prefix="/api/chat", tags=["Chat"])
 # Create new chat session
 @router.post("/sessions")
 async def create_session(payload: ChatSessionCreate, user: dict = Depends(get_current_user), supabase: Client = Depends(get_supabase)):
-    data = {"user_id": user["id"], "document_id": payload.document_id, "title": payload.title or "Contract Audit Session"}
+    title = payload.title
+    if not title or title in ("Contract Audit Session", "auto", ""):
+        try:
+            doc_res = execute_db_query(supabase.table("documents").select("filename").eq("id", payload.document_id).single())
+            if doc_res.data and doc_res.data.get("filename"):
+                sess_res = execute_db_query(supabase.table("chat_sessions").select("id").eq("document_id", payload.document_id).eq("user_id", user["id"]))
+                count = len(sess_res.data or []) + 1
+                from app.services.session_namer import generate_smart_session_title
+                title = await generate_smart_session_title(doc_res.data["filename"], session_index=count)
+        except Exception:
+            title = title or "Contract Audit Session"
+
+    data = {"user_id": user["id"], "document_id": payload.document_id, "title": title}
     res = execute_db_query(supabase.table("chat_sessions").insert(data))
     return res.data[0]
+
+# Suggest AI session title
+@router.post("/suggest-title")
+async def suggest_title(payload: dict, user: dict = Depends(get_current_user)):
+    filename = payload.get("filename", "")
+    session_index = payload.get("session_index", 1)
+    from app.services.session_namer import generate_smart_session_title
+    title = await generate_smart_session_title(filename, session_index=session_index)
+    return {"title": title}
 
 # List all user sessions
 @router.get("/sessions-all")

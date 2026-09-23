@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { uploadDocument, createSession } from '../../api/client';
 import useWorkspaceStore from '../../store/workspaceStore';
+import { generateSmartSessionTitle } from '../../utils/sessionNamer';
 
 const PROCESSING_STAGES = [
   { label: 'Ingesting contract PDF to isolated storage…', icon: Upload },
@@ -15,8 +16,14 @@ const PROCESSING_STAGES = [
   { label: 'Synthesizing tree citations & preparing RAG workspace…', icon: Stamp },
 ];
 
-export default function UploadModal({ onClose }: { onClose: () => void }) {
-  const [file, setFile] = useState<File | null>(null);
+export default function UploadModal({
+  onClose,
+  initialFile = null,
+}: {
+  onClose: () => void;
+  initialFile?: File | null;
+}) {
+  const [file, setFile] = useState<File | null>(initialFile);
   const [stage, setStage] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
   const [stageIdx, setStageIdx] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
@@ -60,10 +67,10 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
       addDocument(newDoc);
       setSelectedDoc(newDoc);
 
-      // Auto-create initial session and switch directly to workspace chat
+      // Auto-create initial session with AI session namer
       try {
-        const baseName = doc.filename.replace(/\.pdf$/i, '').slice(0, 20);
-        const sessRes = await createSession(doc.doc_id, `Audit – ${baseName}`);
+        const smartTitle = generateSmartSessionTitle(doc.filename, 1);
+        const sessRes = await createSession(doc.doc_id, smartTitle);
         addSession(sessRes.data);
         setSelectedSessionId(sessRes.data.id);
         setMessages([]);
@@ -82,6 +89,12 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
       setStage('error');
     }
   };
+
+  useEffect(() => {
+    if (initialFile && stage === 'idle') {
+      handleUpload(initialFile);
+    }
+  }, [initialFile]);
 
   const onDrop = useCallback((accepted: File[]) => {
     if (accepted[0]) {
@@ -110,7 +123,7 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.95, opacity: 0 }}
         transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-md p-7 rounded-3xl bg-[#120D0A] border border-peach-500/30 shadow-2xl shadow-peach-950/90 text-center flex flex-col items-center relative overflow-hidden"
+        className="w-full max-w-md sm:max-w-lg p-7 rounded-3xl bg-[#120D0A] border border-peach-500/30 shadow-2xl shadow-peach-950/90 text-center flex flex-col items-center relative overflow-hidden"
       >
         {/* Close Button (Idle only) */}
         {stage === 'idle' && (
@@ -201,9 +214,17 @@ export default function UploadModal({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
 
-              <h3 className="text-base font-bold text-slate-100 mb-1 truncate px-2">
-                Auditing {file?.name || 'Contract PDF'}
+              <h3 className="text-base font-bold text-slate-100 mb-1.5 tracking-tight">
+                Auditing Contract
               </h3>
+              <div className="mb-2 px-1 max-w-full">
+                <p 
+                  className="text-xs font-mono font-medium text-peach-300/90 bg-peach-500/10 border border-peach-500/20 px-3 py-1.5 rounded-xl break-all leading-normal" 
+                  title={file?.name}
+                >
+                  {file?.name || 'Contract PDF'}
+                </p>
+              </div>
               <p className="text-xs text-slate-400 mb-5">
                 Executing autonomous hierarchical legal audit…
               </p>

@@ -911,8 +911,8 @@ export default function ChatPanel() {
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#0C0806]">
       {/* Header Bar */}
-      <div className="shrink-0 h-16 px-6 border-b border-white/8 bg-[#120D0A]/90 backdrop-blur-xl flex items-center justify-between gap-4 z-10">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="shrink-0 min-h-16 px-4 sm:px-6 py-2 border-b border-white/8 bg-[#120D0A]/90 backdrop-blur-xl flex items-center justify-between gap-3 sm:gap-4 z-10">
+        <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
           <button
             onClick={() => setCurrentView('library')}
             title="Back to Contracts Library"
@@ -921,9 +921,9 @@ export default function ChatPanel() {
             <FolderOpen size={15} />
           </button>
           
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1 overflow-hidden">
             {isEditingTitle ? (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 max-w-full">
                 <input
                   autoFocus
                   value={titleInput}
@@ -932,18 +932,18 @@ export default function ChatPanel() {
                     if (e.key === 'Enter') handleSaveRename();
                     if (e.key === 'Escape') setIsEditingTitle(false);
                   }}
-                  className="bg-slate-900 text-slate-100 text-xs px-2 py-0.5 rounded border border-peach-500/50 outline-none w-44 sm:w-64"
+                  className="bg-slate-900 text-slate-100 text-xs px-2 py-0.5 rounded border border-peach-500/50 outline-none w-44 sm:w-72 max-w-full"
                 />
                 <button
                   onClick={handleSaveRename}
-                  className="p-1 text-peach-400 hover:text-peach-300 cursor-pointer"
+                  className="p-1 text-peach-400 hover:text-peach-300 cursor-pointer shrink-0"
                   title="Save title"
                 >
                   <Check size={13} />
                 </button>
                 <button
                   onClick={() => setIsEditingTitle(false)}
-                  className="p-1 text-slate-500 hover:text-slate-300 cursor-pointer"
+                  className="p-1 text-slate-500 hover:text-slate-300 cursor-pointer shrink-0"
                   title="Cancel"
                 >
                   <X size={13} />
@@ -951,33 +951,33 @@ export default function ChatPanel() {
               </div>
             ) : (
               <div
-                className="flex items-center gap-1.5 group/rename cursor-pointer"
+                className="flex items-center gap-1.5 group/rename cursor-pointer min-w-0"
                 onClick={() => {
                   setTitleInput(activeSession?.title || 'Contract Audit Session');
                   setIsEditingTitle(true);
                 }}
                 title="Click to rename this audit chat"
               >
-                <h2 className="text-xs sm:text-sm font-bold text-slate-100 group-hover/rename:text-peach-300 transition-colors truncate max-w-[260px] sm:max-w-[420px]">
+                <h2 className="text-xs sm:text-sm font-bold text-slate-100 group-hover/rename:text-peach-300 transition-colors truncate">
                   {activeSession?.title || 'Contract Audit Session'}
                 </h2>
                 <Edit3 size={12} className="text-slate-500 group-hover/rename:text-peach-400 transition-colors shrink-0" />
               </div>
             )}
-            <div className="flex items-center gap-1 mt-0.5">
-              <span className="text-[11px] text-slate-400 font-mono break-words leading-tight" title={selectedDoc?.filename}>
+            <div className="flex items-center gap-1 mt-0.5 min-w-0 overflow-hidden">
+              <span className="text-[11px] text-slate-400 font-mono truncate max-w-full block" title={selectedDoc?.filename}>
                 {selectedDoc?.filename ?? 'Contract'}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 ml-auto">
           {selectedDoc && (
             <button
               onClick={() => handleInspectInPdf(1, '')}
               title="View PDF file"
-              className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-peach-300 bg-white/5 hover:bg-peach-500/15 border border-white/8 hover:border-peach-500/30 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+              className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-peach-300 bg-white/5 hover:bg-peach-500/15 border border-white/8 hover:border-peach-500/30 px-2.5 sm:px-3 py-1.5 rounded-xl transition-all cursor-pointer shrink-0"
             >
               <Eye size={13} className="text-peach-400" />
               <span className="hidden sm:inline">View PDF</span>
@@ -987,10 +987,15 @@ export default function ChatPanel() {
           <button
             onClick={handleExport}
             disabled={exporting || messages.length === 0}
-            className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-peach-300 disabled:opacity-40 disabled:cursor-not-allowed bg-white/5 hover:bg-peach-500/15 border border-white/8 hover:border-peach-500/30 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+            className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-peach-300 disabled:opacity-40 disabled:cursor-not-allowed bg-white/5 hover:bg-peach-500/15 border border-white/8 hover:border-peach-500/30 px-2.5 sm:px-3 py-1.5 rounded-xl transition-all cursor-pointer shrink-0"
+            title="Export full legal audit & analysis report as PDF"
           >
-            {exporting ? <Loader2 size={13} className="animate-spin text-peach-400" /> : <Download size={13} />}
-            <span>Export PDF</span>
+            {exporting ? (
+              <Loader2 size={13} className="animate-spin text-peach-400" />
+            ) : (
+              <Download size={13} className="text-peach-400" />
+            )}
+            <span className="hidden sm:inline">{exporting ? 'Generating…' : 'Export PDF'}</span>
           </button>
         </div>
       </div>

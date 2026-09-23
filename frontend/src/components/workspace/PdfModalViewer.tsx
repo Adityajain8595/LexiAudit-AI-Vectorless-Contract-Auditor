@@ -511,13 +511,11 @@ function PdfPageItem({
             top: `${hl.top}px`,
             width: `${hl.width}px`,
             height: `${hl.height}px`,
-            backgroundColor: hl.isRisk ? 'rgba(255, 138, 76, 0.38)' : 'rgba(56, 189, 248, 0.35)',
-            boxShadow: hl.isRisk
-              ? '0 0 0 1.5px rgba(255, 117, 76, 0.8), 0 0 10px rgba(255, 117, 76, 0.35)'
-              : '0 0 0 1px rgba(56, 189, 248, 0.6)',
+            backgroundColor: 'rgba(56, 189, 248, 0.38)',
+            boxShadow: '0 0 0 1.5px rgba(56, 189, 248, 0.8), 0 0 10px rgba(56, 189, 248, 0.35)',
             mixBlendMode: 'multiply',
           }}
-          className={`rounded-[2px] pointer-events-none ${hl.isRisk && i === 0 ? 'animate-pulse' : ''}`}
+          className={`rounded-[2px] pointer-events-none ${i === 0 ? 'animate-pulse' : ''}`}
         />
       ))}
     </div>
@@ -777,8 +775,8 @@ export default function PdfModalViewer({ isSidePanel = false }: { isSidePanel?: 
               <div className="w-8 h-8 rounded-xl bg-peach-500/15 border border-peach-500/25 flex items-center justify-center shrink-0">
                 <FileText size={16} className="text-peach-400" />
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs sm:text-sm font-bold text-slate-100 break-words leading-tight" title={selectedDoc?.filename}>
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <p className="text-xs sm:text-sm font-bold text-slate-100 truncate block max-w-full" title={selectedDoc?.filename}>
                   {selectedDoc?.filename ?? 'Contract PDF'}
                 </p>
               </div>

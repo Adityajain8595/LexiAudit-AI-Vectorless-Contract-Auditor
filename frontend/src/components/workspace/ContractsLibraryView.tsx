@@ -9,6 +9,7 @@ import type { Document } from '../../store/workspaceStore';
 import { createSession as apiCreateSession, deleteDocument as apiDeleteDocument } from '../../api/client';
 import UploadModal from './UploadModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
+import { generateSmartSessionTitle } from '../../utils/sessionNamer';
 
 function formatDate(iso: string) {
   if (!iso) return '—';
@@ -48,11 +49,10 @@ export default function ContractsLibraryView() {
   const handleCreateNewAuditChat = async (doc: Document) => {
     setSelectedDoc(doc);
     try {
-      // Generate intelligent, non-duplicate session title
+      // Generate intelligent, non-duplicate session title with AI session namer
       const existingDocSessions = allSessions.filter((s) => s.document_id === doc.id);
       const sessionNumber = existingDocSessions.length + 1;
-      const baseName = doc.filename.replace(/\.pdf$/i, '').slice(0, 20);
-      const title = sessionNumber > 1 ? `Audit ${sessionNumber} – ${baseName}` : `Audit – ${baseName}`;
+      const title = generateSmartSessionTitle(doc.filename, sessionNumber);
 
       const res = await apiCreateSession(doc.id, title);
       addSession(res.data);

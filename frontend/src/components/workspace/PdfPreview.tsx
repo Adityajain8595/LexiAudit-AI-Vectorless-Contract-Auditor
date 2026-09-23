@@ -108,17 +108,17 @@ export default function PdfPreview() {
 
       {/* Citation info banner if present */}
       {pdfCitation && (
-        <div className="shrink-0 p-3.5 bg-peach-500/[0.08] border-b border-peach-500/20">
+        <div className="shrink-0 p-3.5 bg-sky-500/[0.08] border-b border-sky-500/20">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-peach-300 flex items-center gap-1.5">
-              <FileText size={11} /> Cited Evidence Excerpt
+            <span className="text-[10px] font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
+              <FileText size={11} className="text-sky-400" /> Cited Evidence Excerpt
             </span>
-            <span className="text-[9px] font-mono bg-peach-500/20 text-peach-300 px-1.5 py-0.2 rounded">
+            <span className="text-[9px] font-mono bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded">
               Page {pageNum}
             </span>
           </div>
           {pdfCitation.exact_text && (
-            <p className="text-xs text-slate-200 italic font-mono bg-slate-950/60 p-2.5 rounded-lg border border-white/5 line-clamp-3">
+            <p className="text-xs text-slate-200 italic font-mono bg-slate-950/60 p-2.5 rounded-lg border border-sky-500/15 line-clamp-3">
               "{pdfCitation.exact_text}"
             </p>
           )}

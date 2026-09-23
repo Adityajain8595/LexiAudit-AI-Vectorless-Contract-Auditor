@@ -127,6 +127,9 @@ export const fetchDocumentFileBlob = (docId: string) =>
 export const createSession = (documentId: string, title?: string) =>
   api.post('/api/chat/sessions', { document_id: documentId, title });
 
+export const suggestSessionTitle = (filename: string, sessionIndex: number = 1) =>
+  api.post('/api/chat/suggest-title', { filename, session_index: sessionIndex });
+
 export const listAllSessions = () => api.get('/api/chat/sessions-all');
 
 export const updateSessionTitle = (sessionId: string, title: string) =>

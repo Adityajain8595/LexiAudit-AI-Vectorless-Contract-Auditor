@@ -17,6 +17,7 @@ import {
 } from '../../api/client';
 import UploadModal from './UploadModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
+import { generateSmartSessionTitle } from '../../utils/sessionNamer';
 
 function formatDate(iso: string) {
   if (!iso) return '';
@@ -141,7 +142,8 @@ export default function Sidebar({ onLogout }: { onLogout: () => void }) {
       await handleSelectDoc(targetDoc);
     }
     try {
-      const title = `Audit – ${targetDoc?.filename ? targetDoc.filename.slice(0, 20) : 'Contract'}`;
+      const existingDocSessions = allSessions.filter((s) => s.document_id === docId);
+      const title = generateSmartSessionTitle(targetDoc?.filename || 'Contract', existingDocSessions.length + 1);
       const res = await apiCreateSession(docId, title);
       addSession(res.data);
       setSelectedSessionId(res.data.id);
@@ -284,8 +286,6 @@ export default function Sidebar({ onLogout }: { onLogout: () => void }) {
               allSessions.map((sess) => {
                 const isSelected = selectedSessionId === sess.id && currentView === 'chat';
                 const isEditing = editingSessionId === sess.id;
-                const docName = sess.documents?.filename || documents.find((d) => d.id === sess.document_id)?.filename || 'Contract';
-
                 return (
                   <div
                     key={sess.id}
@@ -327,10 +327,6 @@ export default function Sidebar({ onLogout }: { onLogout: () => void }) {
                             {sess.title}
                           </p>
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px] text-peach-400/80 font-mono truncate max-w-[130px]">
-                              {docName}
-                            </span>
-                            <span className="text-[10px] text-slate-500">·</span>
                             <span className="text-[10px] text-slate-500">
                               {formatDate(sess.created_at)}
                             </span>
