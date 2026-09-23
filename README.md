@@ -132,14 +132,3 @@ Run environmental subsystem diagnostics:
 cd backend
 python scripts/setup_env.py
 ```
-
----
-
-## GitHub Deployment Checklist
-
-- [x] All `.env` files and sensitive API keys excluded via `.gitignore`.
-- [x] `.env.example` templates created for backend and frontend.
-- [x] Langfuse telemetry updated with user and session tracking.
-- [x] Prompt registry enhanced with separate precision and recall prompts.
-- [x] Codebase cleaned of AI-ish comments and redundant files.
-"# LexiAudit-AI-Vectorless-Contract-Auditor" 
